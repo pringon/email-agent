@@ -37,3 +37,16 @@ Six main modules handle the email-to-task pipeline:
 ## Key Documentation
 
 - `docs/agentic_email_organizer_spec.md` - Full specification with architecture diagrams and project plan
+- `docs/development_log.md` - Development journal for blog post content
+
+## Development Log
+
+Maintain `docs/development_log.md` as a running journal of development sessions. At the end of each session or when significant progress is made, append a summary including:
+
+- Date and session goals
+- What was implemented or changed
+- Key decisions and rationale
+- Current status and next steps
+- Any blockers or issues encountered
+
+This log will be used for a blog post about the development journey.

@@ -28,11 +28,43 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 
 ## Setup
 
-1. Clone the repository
-2. Create a virtual environment and install dependencies
-3. Set up Google Cloud credentials (OAuth2)
-4. Configure your OpenAI API key in `.env`
-5. Run the agent or set up the cronjob
+1. **Clone the repository**
+   ```bash
+   git clone <repo-url>
+   cd email-agent
+   ```
+
+2. **Create virtual environment and install dependencies**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+3. **Set up Google Cloud credentials**
+   - Create a Google Cloud Project
+   - Enable Gmail API and Google Tasks API
+   - Create OAuth 2.0 credentials (Desktop app)
+   - Download the credentials JSON and save as `config/credentials.json`
+
+4. **Configure environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your OpenAI API key
+   ```
+
+5. **Run the agent or set up the cronjob**
+
+## Testing
+
+Run the integration tests to verify your Gmail credentials are working:
+
+```bash
+source venv/bin/activate
+pytest tests/test_gmail_integration.py -v
+```
+
+On first run, a browser window will open for OAuth authorization. After authorizing, a `token.json` file is saved for future use.
 
 ## Documentation
 
