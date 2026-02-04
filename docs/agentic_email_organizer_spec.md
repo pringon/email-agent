@@ -110,8 +110,8 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 | T01     | Write initial documentation and setup instructions     | High     | -                   | Initialization           | ✅ Complete |
 | T02     | Setup Google Cloud Project & enable Gmail + Tasks API | High     | T01                 | Initialization           | ✅ Complete |
 | T03     | Implement Gmail auth (OAuth2) & email fetcher         | High     | T02                 | Core Agent               | ✅ Complete |
-| T04     | Integrate OpenAI API & prompt for task extraction     | High     | T03                 | Core Agent               | ⬚ Pending  |
-| T05     | Design JSON schema for extracted tasks                | Medium   | T04                 | Core Agent               | ⬚ Pending  |
+| T04     | Integrate OpenAI API & prompt for task extraction     | High     | T03                 | Core Agent               | ✅ Complete |
+| T05     | Design JSON schema for extracted tasks                | Medium   | T04                 | Core Agent               | ✅ Complete |
 | T06     | Implement Google Tasks API integration                | High     | T02, T05            | Task Management          | ⬚ Pending  |
 | T07     | Link tasks to originating email threads               | High     | T05, T06            | Task Management          | ⬚ Pending  |
 | T08     | Write logic to detect task completion via Sent Mail   | Medium   | T07                 | Task Management          | ⬚ Pending  |
@@ -128,6 +128,8 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 - **T02** (2026-02-02): Google Cloud Project configured with Gmail API enabled. OAuth2 credentials working.
 - **T03** (2026-02-02): Gmail auth implemented and tested via integration test.
 - **T03** (2026-02-04): EmailFetcher module fully implemented with Email model, body parsing, Gmail authentication, and state repository pattern. 31 unit tests passing.
+- **T04** (2026-02-04): EmailAnalyzer module implemented with pluggable LLMAdapter interface, OpenAI GPT-4 adapter, and task extraction prompts. 46 unit tests passing.
+- **T05** (2026-02-04): JSON schema designed via ExtractedTask and AnalysisResult dataclasses with serialization support.
 
 ---
 
