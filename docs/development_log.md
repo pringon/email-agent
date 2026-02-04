@@ -131,3 +131,72 @@ Created `tests/test_email_fetcher.py` with 31 tests covering:
 ```
 
 All unit tests passing. Integration tests also verified (4 passed in 5.56s).
+
+---
+
+## Session 3 — 2026-02-04
+
+### Goal
+Complete T04 and T05 by implementing the EmailAnalyzer module with a pluggable LLM adapter interface.
+
+### What We Did
+
+**1. Designed Pluggable LLM Adapter Architecture**
+
+Created an abstract `LLMAdapter` interface that allows swapping LLM providers without changing analysis logic:
+- `LLMAdapter` ABC defines `complete()`, `model_name`, and `provider_name`
+- `OpenAIAdapter` implements the interface for GPT-4
+- Future adapters (Anthropic, local models) can be added by implementing the interface
+
+**2. Implemented EmailAnalyzer Module Structure**
+
+Created the following files in `src/analyzer/`:
+- `models.py` — Priority enum, Message, ExtractedTask, AnalysisResult dataclasses
+- `exceptions.py` — Custom exception hierarchy (AnalyzerError, LLMConnectionError, LLMRateLimitError, LLMAuthenticationError, LLMResponseError)
+- `adapter.py` — LLMAdapter abstract base class
+- `openai_adapter.py` — OpenAI GPT implementation with lazy client initialization
+- `prompts.py` — System and user prompt templates for task extraction
+- `email_analyzer.py` — Main EmailAnalyzer class with analyze() and analyze_batch()
+- `__init__.py` — Public API exports
+
+**3. Key Design Decisions**
+
+- **Synchronous interface**: Matches existing patterns; async can be added later if needed
+- **Response parsing in EmailAnalyzer**: Keeps adapters simple and reusable
+- **Return list of tasks (0-N)**: Handles all cases uniformly (no tasks, single task, multiple tasks)
+- **Prompts as class constants with injection override**: Works out of box, customizable
+- **Retry logic for transient failures**: Configurable max_retries with graceful degradation
+- **JSON mode for structured output**: Uses OpenAI's response_format parameter
+
+**4. Created Comprehensive Unit Tests**
+
+Created `tests/test_email_analyzer.py` with 46 tests covering:
+- Priority enum values and string conversion
+- Message serialization
+- ExtractedTask serialization/deserialization roundtrip
+- AnalysisResult serialization/deserialization roundtrip
+- LLM exception classes with custom attributes
+- OpenAIAdapter initialization, API key handling, lazy client init
+- EmailAnalyzer task extraction, retry logic, custom prompts
+- Response parsing edge cases (invalid JSON, missing fields, invalid dates)
+
+### Current Status
+
+- **Completed:** T04 (OpenAI integration), T05 (JSON schema design)
+- **Next Up:** T06 (Google Tasks API integration)
+
+### Decisions Made
+
+- Using ABC (Abstract Base Class) for LLMAdapter interface — consistent with StateRepository pattern
+- ExtractedTask includes confidence score for downstream filtering/prioritization
+- AnalysisResult stores raw_response for debugging LLM output issues
+- Email body truncated to 8000 chars to stay within token limits
+- Malformed tasks in LLM response are skipped gracefully (logged but not raised)
+
+### Test Results
+
+```
+77 passed in 0.57s
+```
+
+All unit tests passing (46 new analyzer tests + 31 existing fetcher tests).
