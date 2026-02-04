@@ -52,3 +52,13 @@ Maintain `docs/development_log.md` as a running journal of development sessions.
 - Any blockers or issues encountered
 
 This log will be used for a blog post about the development journey.
+
+## Pull Request Guidelines
+
+Prefer smaller, focused PRs to reduce review burden:
+
+- **Target size:** 500-800 lines changed
+- **Maximum:** Going over is acceptable when necessary, but avoid PRs exceeding 1000 lines if they can be split
+- **Approach:** Break large features into logical increments (e.g., models first, then implementation, then tests)
+
+Smaller PRs are easier to review, less likely to introduce bugs, and create cleaner git history.
