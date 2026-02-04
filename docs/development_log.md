@@ -72,3 +72,62 @@ apscheduler
 ### Blockers
 
 Waiting for Google Cloud OAuth credentials before proceeding with Gmail API integration.
+
+---
+
+## Session 2 — 2026-02-04
+
+### Goal
+Complete T03 by implementing the EmailFetcher module.
+
+### What We Did
+
+**1. Implemented EmailFetcher Module Structure**
+
+Created the following files in `src/fetcher/`:
+- `models.py` — Email dataclass with serialization methods
+- `body_parser.py` — MIME parsing utilities (base64 decoding, multipart extraction, HTML-to-text conversion)
+- `gmail_auth.py` — GmailAuthenticator class with token refresh and lazy service creation
+- `state.py` — StateRepository interface + InMemoryStateRepository for tracking processed emails
+- `email_fetcher.py` — Main EmailFetcher class with fetch_unread(), fetch_new_emails(), fetch_by_id()
+- `__init__.py` — Public API exports
+
+**2. Key Design Decisions**
+
+- **Stateless operation**: No local state file; designed for cronjob execution
+- **Track by message ID**: Each email processed independently, even replies in existing threads
+- **Thread context preserved**: Email.thread_id passed to downstream modules for task association decisions
+- **Pluggable state repository**: Interface allows different backends (in-memory for testing, future task-backed for production)
+- **Iterator pattern**: Memory-efficient for large mailboxes
+- **Dependency injection**: Service and authenticator injectable for testing
+
+**3. Created Comprehensive Unit Tests**
+
+Created `tests/test_email_fetcher.py` with 31 tests covering:
+- Base64 decoding (simple, padding, unicode)
+- Email address extraction (name+email, quoted, brackets-only, plain)
+- HTML-to-text conversion (simple, script/style stripping, line breaks)
+- Body extraction (simple text, HTML, multipart, nested multipart)
+- InMemoryStateRepository operations
+- Email model serialization roundtrip
+- EmailFetcher with mocked Gmail service
+
+### Current Status
+
+- **Completed:** T03 (EmailFetcher module fully implemented)
+- **Next Up:** T04 (OpenAI integration for task extraction)
+
+### Decisions Made
+
+- Using iterator pattern for fetch methods to handle large mailboxes efficiently
+- Email model includes both message ID and thread ID — message ID for unique tracking, thread ID for downstream context
+- State repository is injectable, with InMemoryStateRepository as default; future TaskBackedStateRepository will query Google Tasks metadata
+- GmailAuthenticator extracted as reusable component with configurable paths
+
+### Test Results
+
+```
+31 passed in 0.66s
+```
+
+All unit tests passing. Integration tests also verified (4 passed in 5.56s).
