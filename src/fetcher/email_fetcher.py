@@ -176,6 +176,49 @@ class EmailFetcher:
             if not self._state.is_processed(email.id):
                 yield email
 
+    def fetch_latest(self, max_results: int = 20) -> Iterator[Email]:
+        """Fetch the latest emails regardless of read status.
+
+        Fetches the most recent emails from the inbox, useful for
+        testing and batch processing.
+
+        Args:
+            max_results: Maximum number of emails to fetch
+
+        Yields:
+            Email objects for each message, newest first
+        """
+        service = self._get_service()
+
+        # List messages from inbox (no unread filter)
+        results = (
+            service.users()
+            .messages()
+            .list(
+                userId="me",
+                q="in:inbox",
+                maxResults=max_results,
+            )
+            .execute()
+        )
+
+        messages = results.get("messages", [])
+
+        for msg_ref in messages:
+            # Fetch full message details
+            message = (
+                service.users()
+                .messages()
+                .get(
+                    userId="me",
+                    id=msg_ref["id"],
+                    format="full",
+                )
+                .execute()
+            )
+
+            yield self._parse_message(message)
+
     def fetch_by_id(self, message_id: str) -> Email:
         """Fetch a specific email by message ID.
 
