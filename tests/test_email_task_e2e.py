@@ -3,7 +3,22 @@
 This test fetches real emails from Gmail, extracts tasks using the LLM,
 and prints the results with PII redacted.
 
-Run with: python -m pytest tests/test_email_task_e2e.py -v -s
+Run locally:
+    python -m pytest tests/test_email_task_e2e.py -v -s
+
+Configure via environment variables:
+    GMAIL_CREDENTIALS_PATH  - Path to OAuth credentials.json (default: config/credentials.json)
+    GMAIL_TOKEN_PATH        - Path to OAuth token.json (default: config/token.json)
+    GMAIL_NON_INTERACTIVE   - Set to "1" to fail fast if re-auth needed (for CI)
+    OPENAI_API_KEY          - Required for LLM analysis
+
+CI setup:
+    1. Create a dedicated test Gmail account
+    2. Generate OAuth credentials and token locally
+    3. Store credentials/token as base64-encoded GitHub secrets
+    4. Decode secrets to files in CI workflow before running tests
+
+See docs/testing.md for detailed setup instructions.
 """
 
 import os
