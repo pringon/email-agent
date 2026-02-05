@@ -2,55 +2,22 @@
 Integration test for Gmail API credentials and basic email fetching.
 
 Run with: python -m pytest tests/test_gmail_integration.py -v
+
+Configure via environment variables:
+    GMAIL_CREDENTIALS_PATH  - Path to OAuth credentials.json
+    GMAIL_TOKEN_PATH        - Path to OAuth token.json
+    GMAIL_NON_INTERACTIVE   - Set to "1" to fail fast if re-auth needed
 """
 
-import os
-import pickle
 from pathlib import Path
 
 import pytest
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 
-# Gmail API scopes
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+from src.fetcher import GmailAuthenticator
 
-# Paths
+# Paths (for test_credentials_file_exists only)
 PROJECT_ROOT = Path(__file__).parent.parent
-CREDENTIALS_PATH = PROJECT_ROOT / "config" / "credentials.json"
-TOKEN_PATH = PROJECT_ROOT / "config" / "token.json"
-
-
-def get_gmail_service():
-    """Authenticate and return Gmail API service."""
-    creds = None
-
-    # Load existing token if available
-    if TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
-
-    # Refresh or create new credentials
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not CREDENTIALS_PATH.exists():
-                raise FileNotFoundError(
-                    f"Credentials file not found at {CREDENTIALS_PATH}. "
-                    "Please download OAuth credentials from Google Cloud Console."
-                )
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(CREDENTIALS_PATH), SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-
-        # Save token for future runs
-        with open(TOKEN_PATH, "w") as token_file:
-            token_file.write(creds.to_json())
-
-    return build("gmail", "v1", credentials=creds)
+DEFAULT_CREDENTIALS_PATH = PROJECT_ROOT / "config" / "credentials.json"
 
 
 class TestGmailIntegration:
@@ -58,13 +25,14 @@ class TestGmailIntegration:
 
     @pytest.fixture(scope="class")
     def gmail_service(self):
-        """Create Gmail service once for all tests in this class."""
-        return get_gmail_service()
+        """Create Gmail service using GmailAuthenticator."""
+        auth = GmailAuthenticator()
+        return auth.get_service()
 
     def test_credentials_file_exists(self):
-        """Verify credentials.json exists."""
-        assert CREDENTIALS_PATH.exists(), (
-            f"credentials.json not found at {CREDENTIALS_PATH}"
+        """Verify credentials.json exists at the default location."""
+        assert DEFAULT_CREDENTIALS_PATH.exists(), (
+            f"credentials.json not found at {DEFAULT_CREDENTIALS_PATH}"
         )
 
     def test_can_authenticate(self, gmail_service):

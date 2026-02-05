@@ -9,9 +9,17 @@ Public API:
     - GmailAuthenticator: Authentication helper
     - StateRepository: Interface for tracking processed emails
     - InMemoryStateRepository: In-memory implementation
+    - AuthenticationError: Base exception for auth failures
+    - ScopeMismatchError: Token scopes don't match required scopes
+    - NonInteractiveAuthError: Auth requires interaction but in non-interactive mode
 """
 
 from .email_fetcher import EmailFetcher
+from .exceptions import (
+    AuthenticationError,
+    NonInteractiveAuthError,
+    ScopeMismatchError,
+)
 from .gmail_auth import GmailAuthenticator
 from .models import Email
 from .state import InMemoryStateRepository, StateRepository
@@ -22,4 +30,7 @@ __all__ = [
     "GmailAuthenticator",
     "StateRepository",
     "InMemoryStateRepository",
+    "AuthenticationError",
+    "ScopeMismatchError",
+    "NonInteractiveAuthError",
 ]
