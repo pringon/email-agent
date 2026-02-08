@@ -271,3 +271,75 @@ Created `tests/test_task_manager.py` with 48 tests covering:
 ```
 
 All unit tests passing (48 new task manager tests + 85 existing tests).
+
+---
+
+## Session 5 — 2026-02-09
+
+### Goal
+Complete T07 and T08 by implementing the CompletionChecker module for detecting task completion via Sent Mail.
+
+### What We Did
+
+**1. Verified T07 Completion**
+
+T07 (Link tasks to originating email threads) was already "largely complete" from T06:
+- `create_from_extracted_task()` stores `source_email_id` and `source_thread_id` in task metadata
+- `find_tasks_by_thread_id()` and `find_tasks_by_email_id()` for lookups
+- `complete_tasks_for_thread()` ready for T08 to use
+
+**2. Implemented CompletionChecker Module Structure**
+
+Created the following files in `src/completion/`:
+- `models.py` — SentEmail dataclass for sent message data, CompletionResult for tracking check outcomes
+- `exceptions.py` — CompletionError base class and SentMailAccessError
+- `completion_checker.py` — Main CompletionChecker class with Gmail Sent Mail scanning
+- `__init__.py` — Public API exports
+
+**3. Key Design Decisions**
+
+- **Reuse Gmail authenticator**: Uses existing GmailAuthenticator for API access
+- **Lightweight SentEmail model**: Only fetches metadata headers (To, Subject, Date) for efficiency
+- **Thread deduplication**: Multiple replies in same thread only trigger completion once
+- **Error resilience**: Errors during individual completions are recorded but don't stop the scan
+- **Configurable lookback**: Default 24-hour window, customizable via `since` parameter
+- **CompletionResult tracking**: Detailed reporting of what was scanned and completed
+
+**4. CompletionChecker Features**
+
+- `fetch_sent_emails(since, max_results)` — Scan Sent Mail for recent messages
+- `get_thread_ids_with_tasks()` — Get all thread IDs that have open tasks
+- `check_for_completions(since, max_results)` — Main entry point for automatic completion
+- `check_thread(thread_id)` — Complete tasks for a specific thread
+
+**5. Created Comprehensive Unit Tests**
+
+Created `tests/test_completion_checker.py` with 36 tests covering:
+- SentEmail model creation, serialization, deserialization
+- CompletionResult tracking, task aggregation, error handling
+- Exception classes and inheritance
+- CompletionChecker initialization and dependency injection
+- Gmail API mocking for fetch_sent_emails
+- Thread ID collection from tasks
+- Main check_for_completions flow with various scenarios
+- Thread deduplication and error handling
+
+### Current Status
+
+- **Completed:** T07 (verified), T08 (CompletionChecker implemented)
+- **Next Up:** T09 (Daily digest generator) or T10 (Comment parser)
+
+### Decisions Made
+
+- Using metadata format (`format='metadata'`) for Gmail API calls to minimize data transfer
+- SentEmail is separate from Email model since it only needs a subset of fields
+- CompletionResult provides detailed feedback for logging and monitoring
+- Thread deduplication prevents redundant API calls when multiple replies exist
+
+### Test Results
+
+```
+169 passed in 75.35s
+```
+
+All unit tests passing (36 new completion checker tests + 133 existing tests).
