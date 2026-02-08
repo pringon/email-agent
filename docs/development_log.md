@@ -200,3 +200,74 @@ Created `tests/test_email_analyzer.py` with 46 tests covering:
 ```
 
 All unit tests passing (46 new analyzer tests + 31 existing fetcher tests).
+
+---
+
+## Session 4 — 2026-02-08
+
+### Goal
+Complete T06 by implementing the TaskManager module for Google Tasks API integration.
+
+### What We Did
+
+**1. Implemented TaskManager Module Structure**
+
+Created the following files in `src/tasks/`:
+- `models.py` — TaskStatus enum, TaskList and Task dataclasses with API serialization
+- `exceptions.py` — Custom exception hierarchy (TasksError, TasksAuthError, TasksAPIError, TaskNotFoundError, TaskListNotFoundError, RateLimitError)
+- `tasks_auth.py` — TasksAuthenticator class for Google Tasks OAuth2 with token refresh
+- `task_manager.py` — Main TaskManager class with full CRUD operations
+- `__init__.py` — Public API exports
+
+**2. Key Design Decisions**
+
+- **Email metadata in notes**: Stores source_email_id and source_thread_id in task notes with a metadata prefix, allowing retrieval without a separate database
+- **Separate token file**: Uses `config/tasks_token.json` distinct from Gmail token to allow independent scope management
+- **Default task list**: Creates "Email Tasks" list automatically for email-generated tasks
+- **Iterator pattern for listing**: Handles pagination automatically, memory-efficient for large task lists
+- **Integration with ExtractedTask**: Factory method `create_from_extracted_task()` converts analyzer output directly to Google Tasks
+
+**3. TaskManager Features**
+
+- Task list operations: list, get, create, get_or_create_default
+- Task CRUD: create, get, update, delete, list (with pagination)
+- Status operations: complete_task, uncomplete_task
+- Email integration:
+  - `create_from_extracted_task()` — Convert ExtractedTask to Google Task
+  - `find_tasks_by_thread_id()` — Find all tasks for an email thread
+  - `find_tasks_by_email_id()` — Find tasks for a specific email
+  - `complete_tasks_for_thread()` — Mark all tasks for a thread as done (for T08)
+
+**4. Created Comprehensive Unit Tests**
+
+Created `tests/test_task_manager.py` with 48 tests covering:
+- TaskStatus enum values
+- TaskList serialization/deserialization/API response parsing
+- Task serialization, API body generation, metadata embedding/extraction
+- TaskManager list operations with mocked service
+- TaskManager CRUD operations
+- Status change operations
+- Email integration methods (create from extracted, find by thread/email, complete for thread)
+- Error handling (404 → TaskNotFoundError, 429 → RateLimitError, other → TasksAPIError)
+- Exception message formatting
+
+### Current Status
+
+- **Completed:** T06 (Google Tasks API integration)
+- **Next Up:** T07 (Link tasks to originating email threads — largely complete via metadata embedding)
+
+### Decisions Made
+
+- Metadata prefix `---email-agent-metadata---` used to embed email IDs in task notes without conflicting with user content
+- Title truncated to 1024 chars (Google Tasks API limit)
+- Due dates formatted as RFC 3339 for API compatibility
+- Caching default list ID to reduce API calls
+- Separate authenticator class (TasksAuthenticator) follows same pattern as GmailAuthenticator
+
+### Test Results
+
+```
+133 passed in 74.86s
+```
+
+All unit tests passing (48 new task manager tests + 85 existing tests).

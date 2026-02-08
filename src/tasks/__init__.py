@@ -1,7 +1,8 @@
-"""Google Tasks integration module - foundation layer.
+"""Google Tasks integration module.
 
-This module provides data models, exceptions, and authentication
-for the Google Tasks API integration.
+This module provides the TaskManager for creating, reading, updating,
+and deleting tasks in Google Tasks, with special support for tasks
+generated from email analysis.
 """
 
 from .exceptions import (
@@ -13,10 +14,12 @@ from .exceptions import (
     TasksError,
 )
 from .models import Task, TaskList, TaskStatus
+from .task_manager import TaskManager
 from .tasks_auth import TasksAuthenticator
 
 __all__ = [
-    # Authentication
+    # Main classes
+    "TaskManager",
     "TasksAuthenticator",
     # Models
     "Task",
