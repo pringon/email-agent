@@ -112,7 +112,7 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 | T03     | Implement Gmail auth (OAuth2) & email fetcher         | High     | T02                 | Core Agent               | ✅ Complete |
 | T04     | Integrate OpenAI API & prompt for task extraction     | High     | T03                 | Core Agent               | ✅ Complete |
 | T05     | Design JSON schema for extracted tasks                | Medium   | T04                 | Core Agent               | ✅ Complete |
-| T06     | Implement Google Tasks API integration                | High     | T02, T05            | Task Management          | ⬚ Pending  |
+| T06     | Implement Google Tasks API integration                | High     | T02, T05            | Task Management          | ✅ Complete |
 | T07     | Link tasks to originating email threads               | High     | T05, T06            | Task Management          | ⬚ Pending  |
 | T08     | Write logic to detect task completion via Sent Mail   | Medium   | T07                 | Task Management          | ⬚ Pending  |
 | T09     | Build daily digest generator (email or text output)   | Medium   | T06, T07            | Reporting                | ⬚ Pending  |
@@ -130,6 +130,7 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 - **T03** (2026-02-04): EmailFetcher module fully implemented with Email model, body parsing, Gmail authentication, and state repository pattern. 31 unit tests passing.
 - **T04** (2026-02-04): EmailAnalyzer module implemented with pluggable LLMAdapter interface, OpenAI GPT-4 adapter, and task extraction prompts. 46 unit tests passing.
 - **T05** (2026-02-04): JSON schema designed via ExtractedTask and AnalysisResult dataclasses with serialization support.
+- **T06** (2026-02-08): TaskManager module implemented with Google Tasks API integration, CRUD operations, email metadata embedding, and thread-based task lookup. 48 unit tests passing.
 
 ---
 
