@@ -41,15 +41,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Setup Gmail test credentials
+      - name: Setup test credentials
         run: |
           mkdir -p config
           echo "${{ secrets.GMAIL_TEST_CREDENTIALS }}" | base64 -d > config/credentials.json
           echo "${{ secrets.GMAIL_TEST_TOKEN }}" | base64 -d > config/token.json
+          echo "${{ secrets.GOOGLE_TASKS_TEST_TOKEN }}" | base64 -d > config/tasks_token.json
 
       - name: Run E2E tests
         env:
           GMAIL_NON_INTERACTIVE: "1"
+          TASKS_NON_INTERACTIVE: "1"
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          python -m pytest tests/test_email_task_e2e.py -v
+          python -m pytest tests/test_email_task_e2e.py tests/test_tasks_integration.py -v
