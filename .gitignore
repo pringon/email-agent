@@ -2,6 +2,7 @@ venv/
 .env
 config/credentials.json
 config/token.json
+config/tasks_token.json
 __pycache__/
 *.pyc
 *.db
