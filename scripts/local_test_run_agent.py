@@ -15,6 +15,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = PROJECT_ROOT / "config"
 
+sys.path.insert(0, str(PROJECT_ROOT))
+from dotenv import load_dotenv
+
+load_dotenv(PROJECT_ROOT / ".env")
+
 REQUIRED_ENV_VARS = [
     "OPENAI_API_KEY",
 ]
@@ -61,13 +66,6 @@ def main() -> int:
         print(f"  ✓ {path.relative_to(PROJECT_ROOT)}")
 
     print("\nAll prerequisites met. Running agent with --max-emails 1 ...\n")
-
-    # Add project root to path so imports work
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-    from dotenv import load_dotenv
-
-    load_dotenv(PROJECT_ROOT / ".env")
 
     from src.orchestrator import EmailAgentOrchestrator
 
