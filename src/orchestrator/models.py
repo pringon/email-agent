@@ -14,6 +14,7 @@ class StepResult:
     duration_seconds: float
     details: dict[str, Any]
     error: str | None = None
+    skipped: bool = False
 
 
 @dataclass
@@ -26,4 +27,4 @@ class PipelineResult:
 
     @property
     def success(self) -> bool:
-        return all(step.success for step in self.steps)
+        return all(step.success for step in self.steps if not step.skipped)
