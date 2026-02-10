@@ -24,7 +24,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          python -m pytest tests/test_email_fetcher.py tests/test_email_analyzer.py tests/test_orchestrator.py -v
+          python -m pytest -m "not integration" -v
 
   e2e-tests:
     runs-on: ubuntu-latest
@@ -54,4 +54,4 @@ jobs:
           TASKS_NON_INTERACTIVE: "1"
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          python -m pytest tests/test_email_task_e2e.py tests/test_tasks_integration.py -v
+          python -m pytest -m "integration" -v
