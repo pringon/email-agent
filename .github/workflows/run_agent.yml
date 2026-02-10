@@ -18,9 +18,9 @@ jobs:
       - name: Setup credentials
         run: |
           mkdir -p config
-          echo "${{ secrets.GMAIL_TEST_CREDENTIALS }}" | base64 -d > config/credentials.json
-          echo "${{ secrets.GMAIL_TEST_TOKEN }}" | base64 -d > config/token.json
-          echo "${{ secrets.GOOGLE_TASKS_TEST_TOKEN }}" | base64 -d > config/tasks_token.json
+          echo "${{ secrets.GMAIL_PROD_CREDENTIALS }}" | base64 -d > config/credentials.json
+          echo "${{ secrets.GMAIL_PROD_TOKEN }}" | base64 -d > config/token.json
+          echo "${{ secrets.GOOGLE_TASKS_PROD_TOKEN }}" | base64 -d > config/tasks_token.json
       - name: Run agent
         env:
           GMAIL_NON_INTERACTIVE: "1"
