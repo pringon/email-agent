@@ -149,6 +149,10 @@ class Task:
             "status": self.status.value,
         }
 
+        # Include ID for update operations (required by Tasks API PUT)
+        if self.id:
+            body["id"] = self.id
+
         # Build notes with embedded metadata
         notes_parts = []
         if self.notes:

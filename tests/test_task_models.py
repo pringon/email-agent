@@ -131,6 +131,13 @@ class TestTask:
         assert body["status"] == "needsAction"
         assert "notes" not in body
         assert "due" not in body
+        assert "id" not in body
+
+    def test_to_api_body_includes_id(self):
+        """Test API body includes ID when set (required for update)."""
+        task = Task(id="task123", title="Test Task")
+        body = task.to_api_body()
+        assert body["id"] == "task123"
 
     def test_to_api_body_with_metadata(self):
         """Test API body includes email metadata in notes."""
