@@ -17,7 +17,7 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 - **Email Access:** Gmail API (`google-api-python-client`)
 - **AI Integration:** OpenAI GPT-4 via API
 - **Task Management:** Google Tasks API
-- **Scheduler:** `cron` or `APScheduler`
+- **Scheduler:** GitHub Actions cron workflows
 - **Storage:** Local cache / SQLite (optional)
 
 ## Prerequisites
@@ -53,7 +53,21 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
    # Edit .env with your OpenAI API key
    ```
 
-5. **Run the agent or set up the cronjob**
+5. **Run the agent**
+   ```bash
+   python run_agent.py
+   python run_agent.py --max-emails 10  # limit emails processed
+   ```
+
+## Deployment
+
+The agent runs automatically via GitHub Actions cron workflows - no Docker or separate infrastructure needed.
+
+- **Schedule:** Every 15 minutes during business hours (Mon-Fri, 8am-8pm UTC)
+- **Manual trigger:** Available via the Actions tab in GitHub (`workflow_dispatch`)
+- **Monitoring:** Run history and logs in the GitHub Actions tab; email notifications on failure
+
+Credentials are stored as GitHub Secrets (base64-encoded OAuth tokens and API keys). The same secrets used for CI e2e tests power the scheduled runs. See [docs/scheduler_design.md](docs/scheduler_design.md) for the full design.
 
 ## Testing
 
@@ -68,7 +82,8 @@ On first run, a browser window will open for OAuth authorization. After authoriz
 
 ## Documentation
 
-See [docs/agentic_email_organizer_spec.md](docs/agentic_email_organizer_spec.md) for the full specification including architecture details and project plan.
+- [docs/agentic_email_organizer_spec.md](docs/agentic_email_organizer_spec.md) - Full specification with architecture and project plan
+- [docs/scheduler_design.md](docs/scheduler_design.md) - Scheduler and orchestrator design
 
 ## Security
 
