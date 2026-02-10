@@ -2,12 +2,14 @@
 """Local smoke test for run_agent.py.
 
 Validates that all required environment variables and credential files
-are present before running the agent pipeline with --max-emails 1.
+are present before running the agent pipeline.
 
 Run from project root:
     python scripts/local_test_run_agent.py
+    python scripts/local_test_run_agent.py --max-emails 5
 """
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -46,6 +48,15 @@ def check_prerequisites() -> list[str]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Local smoke test for run_agent pipeline")
+    parser.add_argument(
+        "--max-emails",
+        type=int,
+        default=1,
+        help="Maximum number of emails to process (default: 1)",
+    )
+    args = parser.parse_args()
+
     print("Checking prerequisites ...\n")
     errors = check_prerequisites()
 
@@ -65,11 +76,11 @@ def main() -> int:
     for path in REQUIRED_FILES:
         print(f"  ✓ {path.relative_to(PROJECT_ROOT)}")
 
-    print("\nAll prerequisites met. Running agent with --max-emails 1 ...\n")
+    print(f"\nAll prerequisites met. Running agent with --max-emails {args.max_emails} ...\n")
 
     from src.orchestrator import EmailAgentOrchestrator
 
-    orchestrator = EmailAgentOrchestrator(max_emails=1)
+    orchestrator = EmailAgentOrchestrator(max_emails=args.max_emails)
     result = orchestrator.run()
 
     print("\n--- Pipeline Summary ---")
