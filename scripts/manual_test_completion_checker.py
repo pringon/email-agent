@@ -14,20 +14,22 @@ What this test does:
     2. Creates a task linked to that thread in Google Tasks
     3. Runs CompletionChecker.check_for_completions() to detect the match
     4. Verifies the task was auto-completed
-    5. Cleans up the test task
+
+Note: The test task is NOT deleted after the test, so you can verify
+it exists in Google Tasks. Look for tasks prefixed with [SMOKE TEST].
 """
 
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
-# Add project root to sys.path so `src` is importable
+# Add project root to sys.path so `src` and `tests` are importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from datetime import datetime, timedelta
-
+from tests.completion_test_helpers import create_test_task, fetch_thread_id_from_sent_mail
 from src.completion import CompletionChecker
 from src.tasks import TaskManager
-from src.tasks.models import Task, TaskStatus
+from src.tasks.models import TaskStatus
 
 
 def main() -> None:
@@ -36,34 +38,22 @@ def main() -> None:
 
     # --- Step 1: Fetch recent sent emails ---
     print("Step 1: Fetching recent sent emails ...")
-    since = datetime.now() - timedelta(hours=48)
-    sent_emails = list(checker.fetch_sent_emails(since=since, max_results=5))
-
-    if not sent_emails:
-        print("  No sent emails found in the last 48 hours.")
-        print("  Send an email reply first, then re-run this test.")
+    try:
+        thread_id, since = fetch_thread_id_from_sent_mail(
+            checker, since=datetime.now() - timedelta(hours=48)
+        )
+    except RuntimeError as e:
+        print(f"  {e}")
         sys.exit(1)
-
-    print(f"  Found {len(sent_emails)} sent email(s):")
-    for i, email in enumerate(sent_emails):
-        print(f"    [{i}] To: {email.recipient}  Subject: {email.subject}")
-        print(f"        Thread ID: {email.thread_id}  Date: {email.date}")
-
-    # Use the first sent email's thread ID
-    target_email = sent_emails[0]
-    thread_id = target_email.thread_id
-    print(f"\n  Using thread ID: {thread_id}")
+    print(f"  Using thread ID: {thread_id}")
 
     # --- Step 2: Create a task linked to this thread ---
     print("\nStep 2: Creating a test task linked to the thread ...")
-    test_task = Task(
-        title="[SMOKE TEST] Auto-complete via CompletionChecker",
-        notes="Created by manual_test_completion_checker.py",
-        source_thread_id=thread_id,
-        source_email_id=f"smoke-test-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-        status=TaskStatus.NEEDS_ACTION,
+    created_task = create_test_task(
+        task_manager, thread_id,
+        prefix="SMOKE TEST",
+        creator="manual_test_completion_checker.py",
     )
-    created_task = task_manager.create_task(test_task)
     print(f"  Created task: {created_task.id}")
     print(f"  Title: {created_task.title}")
     print(f"  Status: {created_task.status.value}")
@@ -92,15 +82,13 @@ def main() -> None:
     else:
         print("  FAIL: Task was NOT completed. Check the output above for errors.")
 
-    # --- Step 5: Clean up ---
-    print("\nStep 5: Cleaning up test task ...")
-    task_manager.delete_task(created_task.id)
-    print("  Test task deleted.")
-
     # --- Summary ---
     print("\n" + "=" * 50)
     if updated_task.status == TaskStatus.COMPLETED and not result.errors:
         print("  SMOKE TEST PASSED")
+        print(f"\n  Task left in Google Tasks for verification:")
+        print(f"    ID: {created_task.id}")
+        print(f"    Title: {created_task.title}")
     else:
         print("  SMOKE TEST FAILED")
         if result.errors:
