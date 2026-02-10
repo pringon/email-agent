@@ -28,8 +28,10 @@ class TestTaskManagerWithMock:
 
     @pytest.fixture
     def task_manager(self, mock_service):
-        """Create a TaskManager with mock service."""
-        return TaskManager(service=mock_service)
+        """Create a TaskManager with patched service."""
+        manager = TaskManager()
+        manager._get_service = lambda: mock_service
+        return manager
 
     # -------------------- Task List Tests --------------------
 
