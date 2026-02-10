@@ -24,7 +24,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          python -m pytest tests/test_email_fetcher.py tests/test_email_analyzer.py -v
+          python -m pytest tests/test_email_fetcher.py tests/test_email_analyzer.py tests/test_orchestrator.py -v
 
   e2e-tests:
     runs-on: ubuntu-latest
