@@ -113,14 +113,13 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 | T04     | Integrate OpenAI API & prompt for task extraction     | High     | T03                 | Core Agent               | ✅ Complete |
 | T05     | Design JSON schema for extracted tasks                | Medium   | T04                 | Core Agent               | ✅ Complete |
 | T06     | Implement Google Tasks API integration                | High     | T02, T05            | Task Management          | ✅ Complete |
-| T07     | Link tasks to originating email threads               | High     | T05, T06            | Task Management          | ⬚ Pending  |
-| T08     | Write logic to detect task completion via Sent Mail   | Medium   | T07                 | Task Management          | ⬚ Pending  |
-| T09     | Build daily digest generator (email or text output)   | Medium   | T06, T07            | Reporting                | ⬚ Pending  |
+| T07     | Link tasks to originating email threads               | High     | T05, T06            | Task Management          | ✅ Complete |
+| T08     | Write logic to detect task completion via Sent Mail   | Medium   | T07                 | Task Management          | ✅ Complete |
+| T09     | Build daily digest generator (email or text output)   | Medium   | T06, T07            | Reporting                | ✅ Complete |
 | T10     | Implement comment parser for task instructions        | Medium   | T06                 | Agentic Features         | ⬚ Pending  |
-| T11     | Add scheduler (cron job) to run agent periodically    | High     | T03, T06            | Deployment Ready         | ⬚ Pending  |
-| T12     | Dockerize for GitHub deployment                       | Medium   | T11                 | Deployment Ready         | ⬚ Pending  |
-| T13     | Final testing and QA pass                             | High     | T01–T12             | Finalization             | ⬚ Pending  |
-| T14     | Revise and finalize documentation                     | High     | T13                 | Finalization             | ⬚ Pending  |
+| T11     | Add scheduler (cron job) to run agent periodically    | High     | T03, T06            | Deployment Ready         | ✅ Complete |
+| T12     | Final testing and QA pass                             | High     | T01–T11             | Finalization             | ⬚ Pending  |
+| T13     | Revise and finalize documentation                     | High     | T12                 | Finalization             | ⬚ Pending  |
 
 ### Progress Notes
 
@@ -131,6 +130,10 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 - **T04** (2026-02-04): EmailAnalyzer module implemented with pluggable LLMAdapter interface, OpenAI GPT-4 adapter, and task extraction prompts. 46 unit tests passing.
 - **T05** (2026-02-04): JSON schema designed via ExtractedTask and AnalysisResult dataclasses with serialization support.
 - **T06** (2026-02-08): TaskManager module implemented with Google Tasks API integration, CRUD operations, email metadata embedding, and thread-based task lookup. 48 unit tests passing.
+- **T07** (2026-02-08): Completed as part of T06. Tasks embed thread_id and email_id in notes, with find_tasks_by_thread_id and find_tasks_by_email_id lookup methods.
+- **T08** (2026-02-08): CompletionChecker module implemented. Scans Sent Mail for replies to task-related threads and auto-completes matching tasks. 35 unit tests and 3 e2e tests passing.
+- **T09** (2026-02-10): DigestReporter module implemented with daily task digest generation, plain text formatting, email delivery via Gmail API, and task categorization by due date. 62 unit tests passing.
+- **T11** (2026-02-10): Orchestrator pipeline and GitHub Actions cron workflow implemented. Runs agent periodically via run_agent.yml with scheduled dispatch.
 
 ---
 
@@ -141,5 +144,5 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 - **Task Management:** T06–T08
 - **Reporting:** T09
 - **Agentic Features:** T10
-- **Deployment Ready:** T11–T12
-- **Finalization:** T13–T14
+- **Deployment Ready:** T11
+- **Finalization:** T12–T13
