@@ -52,6 +52,17 @@ class EmailAgentOrchestrator:
             self._task_manager = TaskManager()
         return self._task_manager
 
+    @staticmethod
+    def _skip_step(name: str) -> StepResult:
+        """Record a step as skipped due to a prior failure."""
+        return StepResult(
+            name=name,
+            success=False,
+            duration_seconds=0.0,
+            details={},
+            skipped=True,
+        )
+
     def _run_step(self, name: str, fn: callable) -> StepResult:
         """Run a pipeline step with timing and error isolation."""
         start = time.monotonic()
@@ -100,9 +111,16 @@ class EmailAgentOrchestrator:
             logger.info("Fetched %d unread emails", len(emails))
             return {"emails_fetched": len(emails)}
 
-        result.steps.append(self._run_step("fetch", fetch_step))
+        fetch_result = self._run_step("fetch", fetch_step)
+        result.steps.append(fetch_result)
 
-        # Step 2: Analyze
+        # Step 2: Analyze (depends on fetch)
+        if not fetch_result.success:
+            result.steps.append(self._skip_step("analyze"))
+            result.steps.append(self._skip_step("create_tasks"))
+            result.finished_at = datetime.now(timezone.utc)
+            return result
+
         def analyze_step() -> dict:
             nonlocal analyses
             if not emails:
@@ -135,9 +153,15 @@ class EmailAgentOrchestrator:
                 "errors": errors,
             }
 
-        result.steps.append(self._run_step("analyze", analyze_step))
+        analyze_result = self._run_step("analyze", analyze_step)
+        result.steps.append(analyze_result)
 
-        # Step 3: Create tasks
+        # Step 3: Create tasks (depends on analyze)
+        if not analyze_result.success:
+            result.steps.append(self._skip_step("create_tasks"))
+            result.finished_at = datetime.now(timezone.utc)
+            return result
+
         def create_tasks_step() -> dict:
             if not analyses:
                 return {"tasks_created": 0, "duplicates_skipped": 0}

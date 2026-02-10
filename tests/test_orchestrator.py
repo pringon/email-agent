@@ -144,7 +144,7 @@ class TestEmailAgentOrchestrator:
         assert result.steps[1].details["emails_analyzed"] == 0
         assert result.steps[2].details["tasks_created"] == 0
 
-    def test_fetch_failure_does_not_block_later_steps(self):
+    def test_fetch_failure_skips_later_steps(self):
         fetcher = MagicMock()
         fetcher.fetch_unread.side_effect = RuntimeError("Gmail API down")
 
@@ -154,9 +154,9 @@ class TestEmailAgentOrchestrator:
         assert result.success is False
         assert result.steps[0].success is False
         assert result.steps[0].error == "Gmail API down"
-        # Later steps still run (with empty data)
-        assert result.steps[1].success is True
-        assert result.steps[2].success is True
+        # Dependent steps are skipped
+        assert result.steps[1].skipped is True
+        assert result.steps[2].skipped is True
 
     def test_analyze_failure_for_single_email_is_isolated(self):
         email1 = _make_email(id="msg1")

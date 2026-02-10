@@ -32,7 +32,7 @@ def main() -> int:
     # Print summary
     print("\n--- Pipeline Summary ---")
     for step in result.steps:
-        status = "OK" if step.success else "FAILED"
+        status = "SKIPPED" if step.skipped else ("OK" if step.success else "FAILED")
         print(f"  {step.name}: {status} ({step.duration_seconds}s)")
         for key, value in step.details.items():
             print(f"    {key}: {value}")
