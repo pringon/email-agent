@@ -31,7 +31,6 @@ class TaskManager:
     def __init__(
         self,
         authenticator: Optional[TasksAuthenticator] = None,
-        service: Optional[Resource] = None,
         default_list_name: str = DEFAULT_LIST_NAME,
     ):
         """Initialize the TaskManager.
@@ -39,13 +38,11 @@ class TaskManager:
         Args:
             authenticator: TasksAuthenticator instance for API access.
                 Created automatically if not provided.
-            service: Pre-configured Google Tasks API service for testing.
-                Takes precedence over authenticator.
             default_list_name: Name of the task list to use for email tasks.
                 Created if it doesn't exist.
         """
         self._authenticator = authenticator or TasksAuthenticator()
-        self._service = service
+        self._service: Optional[Resource] = None
         self._default_list_name = default_list_name
         self._default_list_id: Optional[str] = None
 
