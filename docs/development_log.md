@@ -343,3 +343,68 @@ Created `tests/test_completion_checker.py` with 36 tests covering:
 ```
 
 All unit tests passing (36 new completion checker tests + 133 existing tests).
+
+---
+
+## Session 6 — 2026-02-10
+
+### Goal
+Complete T09 by implementing the DigestReporter module for daily task digest generation.
+
+### What We Did
+
+**1. Implemented DigestReporter Module Structure**
+
+Created the following files in `src/digest/`:
+- `models.py` — DigestSection, DigestReport, and DeliveryResult dataclasses
+- `exceptions.py` — DigestError base class, DigestBuildError, DigestDeliveryError
+- `digest_reporter.py` — Main DigestReporter class with report building, formatting, and email delivery
+- `__init__.py` — Public API exports
+
+**2. Key Design Decisions**
+
+- **Task categorization by due date**: Groups tasks into Overdue, Due Today, Due This Week, Due Later, and No Due Date sections for at-a-glance urgency assessment
+- **Separate build and format phases**: `build_report()` creates structured data, `format_plain_text()` renders it — enables future HTML or other formats without rebuilding data
+- **Error-resilient orchestration**: `generate_and_send()` records errors in DeliveryResult rather than raising, so plain text output is always returned even if email sending fails
+- **Gmail send scope**: DigestReporter creates its own GmailAuthenticator with the additional `gmail.send` scope when email delivery is needed
+- **Plain text primary**: Email body uses the same plain text format — no HTML complexity needed
+
+**3. DigestReporter Features**
+
+- `build_report(list_id)` — Fetches pending tasks from TaskManager, categorizes by due date
+- `format_plain_text(report)` — Renders digest as formatted plain text with header, summary, and sections
+- `send_email(report, recipient)` — Sends digest via Gmail API using MIMEText + base64url encoding
+- `generate_and_send(recipient, list_id)` — Main entry point combining build, format, and optional email delivery
+
+**4. Created Comprehensive Unit Tests**
+
+Created `tests/test_digest_reporter.py` with 62 tests covering:
+- DigestSection creation, count, serialization roundtrip
+- DigestReport creation, is_empty, serialization roundtrip
+- DeliveryResult creation, error tracking, serialization roundtrip
+- Exception hierarchy and message formatting
+- DigestReporter initialization and dependency injection
+- Task categorization for all five due date categories
+- Plain text formatting (empty, with tasks, singular/plural, overdue count)
+- Email sending with mocked Gmail API (success, subject, body, API errors)
+- Full generate_and_send flow (plain text only, with email, error handling)
+
+### Current Status
+
+- **Completed:** T09 (DigestReporter module fully implemented)
+- **Next Up:** T10 (Comment parser for task instructions) or T11 (Scheduler)
+
+### Decisions Made
+
+- Using `email.mime.text.MIMEText` and `base64.urlsafe_b64encode` for Gmail API send — standard Python libraries, no extra dependencies
+- Empty sections omitted from output to keep digest concise
+- Summary line uses singular "task" for count of 1, omits overdue count when zero
+- DeliveryResult follows CompletionResult pattern for consistent error tracking across modules
+
+### Test Results
+
+```
+187 passed in 0.61s
+```
+
+All unit tests passing (62 new digest reporter tests + 125 existing tests).
