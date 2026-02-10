@@ -63,7 +63,7 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 
 The agent runs automatically via GitHub Actions cron workflows - no Docker or separate infrastructure needed.
 
-- **Schedule:** Every 15 minutes during business hours (Mon-Fri, 8am-8pm UTC)
+- **Schedule:** Every 2 hours
 - **Manual trigger:** Available via the Actions tab in GitHub (`workflow_dispatch`)
 - **Monitoring:** Run history and logs in the GitHub Actions tab; email notifications on failure
 

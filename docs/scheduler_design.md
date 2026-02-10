@@ -2,7 +2,7 @@
 
 ## Overview
 
-The email agent runs on a schedule via GitHub Actions cron workflows. A pipeline orchestrator connects the four core modules (EmailFetcher, EmailAnalyzer, TaskManager, CompletionChecker) into a single run, triggered every 15 minutes during business hours.
+The email agent runs on a schedule via GitHub Actions cron workflows. A pipeline orchestrator connects the four core modules (EmailFetcher, EmailAnalyzer, TaskManager, CompletionChecker) into a single run, triggered every 2 hours.
 
 GitHub Actions was chosen over Docker/self-hosted approaches because:
 - Zero additional infrastructure (already on GitHub)
@@ -15,7 +15,7 @@ This replaces both T11 (scheduler) and T12 (Docker deployment) from the project 
 ## Architecture
 
 ```
-GitHub Actions (cron: */15 8-20 * * 1-5)
+GitHub Actions (cron: 0 */2 * * *)
     |
     v
 run_agent.py (CLI entry point)
@@ -130,7 +130,7 @@ name: Run Email Agent
 
 on:
   schedule:
-    - cron: '*/15 8-20 * * 1-5'    # Every 15 min, Mon-Fri, 8am-8pm UTC
+    - cron: '0 */2 * * *'           # Every 2 hours
   workflow_dispatch:                  # Manual trigger from GitHub UI
 
 jobs:
