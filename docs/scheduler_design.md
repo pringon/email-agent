@@ -146,9 +146,9 @@ jobs:
       - name: Setup credentials
         run: |
           mkdir -p config
-          echo "${{ secrets.GMAIL_TEST_CREDENTIALS }}" | base64 -d > config/credentials.json
-          echo "${{ secrets.GMAIL_TEST_TOKEN }}" | base64 -d > config/token.json
-          echo "${{ secrets.GOOGLE_TASKS_TEST_TOKEN }}" | base64 -d > config/tasks_token.json
+          echo "${{ secrets.GMAIL_PROD_CREDENTIALS }}" | base64 -d > config/credentials.json
+          echo "${{ secrets.GMAIL_PROD_TOKEN }}" | base64 -d > config/token.json
+          echo "${{ secrets.GOOGLE_TASKS_PROD_TOKEN }}" | base64 -d > config/tasks_token.json
       - name: Run agent
         env:
           GMAIL_NON_INTERACTIVE: "1"
@@ -170,13 +170,11 @@ Free GitHub accounts get 2,000 minutes/month. The default schedule uses ~36% of 
 
 ### Credentials
 
-Reuses the exact same GitHub Secrets already configured for e2e tests:
-- `GMAIL_TEST_CREDENTIALS` - Google OAuth client credentials (base64)
-- `GMAIL_TEST_TOKEN` - Gmail OAuth token (base64)
-- `GOOGLE_TASKS_TEST_TOKEN` - Google Tasks OAuth token (base64)
-- `OPENAI_API_KEY` - OpenAI API key
-
-No new secrets need to be configured.
+Production credentials are stored as separate GitHub Secrets from the test ones:
+- `GMAIL_PROD_CREDENTIALS` - Google OAuth client credentials (base64)
+- `GMAIL_PROD_TOKEN` - Gmail OAuth token for personal Gmail (base64)
+- `GOOGLE_TASKS_PROD_TOKEN` - Google Tasks OAuth token for personal account (base64)
+- `OPENAI_API_KEY` - OpenAI API key (shared with CI)
 
 ### Monitoring
 
