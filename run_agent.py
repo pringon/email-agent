@@ -24,10 +24,18 @@ def main() -> int:
         default=50,
         help="Maximum number of emails to process (default: 50)",
     )
+    parser.add_argument(
+        "--check-completions",
+        action="store_true",
+        help="Check Sent Mail for replies and complete matching tasks",
+    )
     args = parser.parse_args()
 
     orchestrator = EmailAgentOrchestrator(max_emails=args.max_emails)
-    result = orchestrator.run()
+    if args.check_completions:
+        result = orchestrator.run_completion_check()
+    else:
+        result = orchestrator.run()
 
     # Print summary
     print("\n--- Pipeline Summary ---")

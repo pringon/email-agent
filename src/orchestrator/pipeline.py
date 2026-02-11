@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from src.analyzer import AnalysisResult, EmailAnalyzer
+from src.completion import CompletionChecker
 from src.fetcher import Email, EmailFetcher
 from src.tasks import TaskManager
 
@@ -30,11 +31,13 @@ class EmailAgentOrchestrator:
         fetcher: Optional[EmailFetcher] = None,
         analyzer: Optional[EmailAnalyzer] = None,
         task_manager: Optional[TaskManager] = None,
+        completion_checker: Optional[CompletionChecker] = None,
         max_emails: int = 50,
     ):
         self._fetcher = fetcher
         self._analyzer = analyzer
         self._task_manager = task_manager
+        self._completion_checker = completion_checker
         self._max_emails = max_emails
 
     def _get_fetcher(self) -> EmailFetcher:
@@ -51,6 +54,11 @@ class EmailAgentOrchestrator:
         if self._task_manager is None:
             self._task_manager = TaskManager()
         return self._task_manager
+
+    def _get_completion_checker(self) -> CompletionChecker:
+        if self._completion_checker is None:
+            self._completion_checker = CompletionChecker()
+        return self._completion_checker
 
     @staticmethod
     def _skip_step(name: str) -> StepResult:
@@ -190,6 +198,39 @@ class EmailAgentOrchestrator:
             return {"tasks_created": created, "duplicates_skipped": skipped}
 
         result.steps.append(self._run_step("create_tasks", create_tasks_step))
+
+        result.finished_at = datetime.now(timezone.utc)
+        return result
+
+    def run_completion_check(self) -> PipelineResult:
+        """Check Sent Mail for replies and complete matching tasks.
+
+        Returns:
+            PipelineResult with a single check_completions step.
+        """
+        result = PipelineResult(started_at=datetime.now(timezone.utc))
+
+        def check_completions_step() -> dict:
+            checker = self._get_completion_checker()
+            completion = checker.check_for_completions()
+            logger.info(
+                "Scanned %d sent emails, matched %d threads, completed %d tasks",
+                completion.sent_emails_scanned,
+                completion.threads_matched,
+                completion.total_completed,
+            )
+            details = {
+                "sent_emails_scanned": completion.sent_emails_scanned,
+                "threads_matched": completion.threads_matched,
+                "tasks_completed": completion.total_completed,
+            }
+            if completion.errors:
+                details["errors"] = completion.errors
+            return details
+
+        result.steps.append(
+            self._run_step("check_completions", check_completions_step)
+        )
 
         result.finished_at = datetime.now(timezone.utc)
         return result

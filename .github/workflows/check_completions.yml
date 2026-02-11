@@ -1,0 +1,28 @@
+name: Check Task Completions
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'    # Every 6 hours
+  workflow_dispatch:            # Manual trigger from GitHub UI
+
+jobs:
+  check-completions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt
+      - name: Setup credentials
+        run: |
+          mkdir -p config
+          echo "${{ secrets.GMAIL_PROD_CREDENTIALS }}" | base64 -d > config/credentials.json
+          echo "${{ secrets.GMAIL_PROD_TOKEN }}" | base64 -d > config/token.json
+          echo "${{ secrets.GOOGLE_TASKS_PROD_TOKEN }}" | base64 -d > config/tasks_token.json
+      - name: Check completions
+        env:
+          GMAIL_NON_INTERACTIVE: "1"
+          TASKS_NON_INTERACTIVE: "1"
+        run: python run_agent.py --check-completions
