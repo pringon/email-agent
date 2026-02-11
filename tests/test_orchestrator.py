@@ -8,6 +8,7 @@ import pytest
 from src.analyzer import AnalysisResult, ExtractedTask, Priority
 from src.fetcher import Email
 from src.orchestrator import EmailAgentOrchestrator, PipelineResult, StepResult
+from src.completion import CompletionResult
 from src.tasks import Task
 
 
@@ -319,6 +320,79 @@ class TestEmailAgentOrchestrator:
             tm = orchestrator._get_task_manager()
             mock_tm_cls.assert_called_once()
 
+        with patch(
+            "src.orchestrator.pipeline.CompletionChecker"
+        ) as mock_checker_cls:
+            mock_checker_cls.return_value = MagicMock()
+            checker = orchestrator._get_completion_checker()
+            mock_checker_cls.assert_called_once()
+
+
+class TestCompletionCheck:
+    def test_completion_check_success(self):
+        completion_result = CompletionResult(
+            sent_emails_scanned=5,
+            threads_matched=2,
+            tasks_completed=["task1", "task2"],
+            thread_task_map={"t1": ["task1"], "t2": ["task2"]},
+        )
+
+        checker = MagicMock()
+        checker.check_for_completions.return_value = completion_result
+
+        orchestrator = EmailAgentOrchestrator(completion_checker=checker)
+        result = orchestrator.run_completion_check()
+
+        assert result.success is True
+        assert len(result.steps) == 1
+        assert result.steps[0].name == "check_completions"
+        assert result.steps[0].details["sent_emails_scanned"] == 5
+        assert result.steps[0].details["threads_matched"] == 2
+        assert result.steps[0].details["tasks_completed"] == 2
+        assert result.finished_at is not None
+
+    def test_completion_check_no_matches(self):
+        checker = MagicMock()
+        checker.check_for_completions.return_value = CompletionResult()
+
+        orchestrator = EmailAgentOrchestrator(completion_checker=checker)
+        result = orchestrator.run_completion_check()
+
+        assert result.success is True
+        assert result.steps[0].details["sent_emails_scanned"] == 0
+        assert result.steps[0].details["threads_matched"] == 0
+        assert result.steps[0].details["tasks_completed"] == 0
+
+    def test_completion_check_failure_captured(self):
+        checker = MagicMock()
+        checker.check_for_completions.side_effect = RuntimeError("Gmail unavailable")
+
+        orchestrator = EmailAgentOrchestrator(completion_checker=checker)
+        result = orchestrator.run_completion_check()
+
+        assert result.success is False
+        assert result.steps[0].success is False
+        assert "Gmail unavailable" in result.steps[0].error
+
+    def test_completion_check_with_errors_in_result(self):
+        completion_result = CompletionResult(
+            sent_emails_scanned=3,
+            threads_matched=1,
+            tasks_completed=["task1"],
+            thread_task_map={"t1": ["task1"]},
+            errors=["Failed to complete tasks for thread t2: API error"],
+        )
+
+        checker = MagicMock()
+        checker.check_for_completions.return_value = completion_result
+
+        orchestrator = EmailAgentOrchestrator(completion_checker=checker)
+        result = orchestrator.run_completion_check()
+
+        assert result.success is True
+        assert result.steps[0].details["tasks_completed"] == 1
+        assert "errors" in result.steps[0].details
+
 
 class TestRunAgentCLI:
     def test_main_returns_zero_on_success(self):
@@ -358,3 +432,20 @@ class TestRunAgentCLI:
                 main()
 
             mock_cls.assert_called_once_with(max_emails=10)
+
+    def test_check_completions_flag(self):
+        with patch("run_agent.EmailAgentOrchestrator") as mock_cls:
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.steps = []
+            mock_cls.return_value.run_completion_check.return_value = mock_result
+
+            from run_agent import main
+
+            with patch(
+                "sys.argv", ["run_agent.py", "--check-completions"]
+            ):
+                assert main() == 0
+
+            mock_cls.return_value.run_completion_check.assert_called_once()
+            mock_cls.return_value.run.assert_not_called()
