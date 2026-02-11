@@ -323,10 +323,64 @@ class TestEmailAgentOrchestrator:
 
         with patch(
             "src.orchestrator.pipeline.CompletionChecker"
-        ) as mock_checker_cls:
+        ) as mock_checker_cls, patch(
+            "src.orchestrator.pipeline.ReplyResolver"
+        ) as mock_resolver_cls:
             mock_checker_cls.return_value = MagicMock()
+            mock_resolver_cls.return_value = MagicMock()
             checker = orchestrator._get_completion_checker()
             mock_checker_cls.assert_called_once()
+            # ReplyResolver should be created and passed to CompletionChecker
+            mock_resolver_cls.assert_called_once()
+            call_kwargs = mock_checker_cls.call_args.kwargs
+            assert "reply_resolver" in call_kwargs
+
+
+class TestReplyResolverWiring:
+    """Tests for ReplyResolver integration in the orchestrator."""
+
+    def test_completion_checker_gets_reply_resolver(self):
+        """Test that _get_completion_checker passes a ReplyResolver."""
+        orchestrator = EmailAgentOrchestrator()
+
+        with patch(
+            "src.orchestrator.pipeline.CompletionChecker"
+        ) as mock_checker_cls, patch(
+            "src.orchestrator.pipeline.ReplyResolver"
+        ) as mock_resolver_cls:
+            mock_resolver = MagicMock()
+            mock_resolver_cls.return_value = mock_resolver
+            mock_checker_cls.return_value = MagicMock()
+
+            orchestrator._get_completion_checker()
+
+            mock_checker_cls.assert_called_once_with(
+                reply_resolver=mock_resolver,
+            )
+
+    def test_injected_reply_resolver_is_used(self):
+        """Test that an injected ReplyResolver is passed through."""
+        mock_resolver = MagicMock()
+        orchestrator = EmailAgentOrchestrator(reply_resolver=mock_resolver)
+
+        with patch(
+            "src.orchestrator.pipeline.CompletionChecker"
+        ) as mock_checker_cls:
+            mock_checker_cls.return_value = MagicMock()
+
+            orchestrator._get_completion_checker()
+
+            call_kwargs = mock_checker_cls.call_args.kwargs
+            assert call_kwargs["reply_resolver"] is mock_resolver
+
+    def test_injected_completion_checker_skips_resolver_creation(self):
+        """Test that injecting a CompletionChecker skips ReplyResolver creation."""
+        mock_checker = MagicMock()
+        orchestrator = EmailAgentOrchestrator(completion_checker=mock_checker)
+
+        result = orchestrator._get_completion_checker()
+
+        assert result is mock_checker
 
         with patch(
             "src.orchestrator.pipeline.CommentInterpreter"

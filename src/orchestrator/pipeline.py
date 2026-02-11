@@ -7,7 +7,7 @@ from typing import Optional
 
 from src.analyzer import AnalysisResult, EmailAnalyzer
 from src.comments import CommentInterpreter
-from src.completion import CompletionChecker
+from src.completion import CompletionChecker, ReplyResolver
 from src.fetcher import Email, EmailFetcher
 from src.tasks import TaskManager
 
@@ -34,6 +34,7 @@ class EmailAgentOrchestrator:
         task_manager: Optional[TaskManager] = None,
         completion_checker: Optional[CompletionChecker] = None,
         comment_interpreter: Optional[CommentInterpreter] = None,
+        reply_resolver: Optional[ReplyResolver] = None,
         max_emails: int = 50,
     ):
         self._fetcher = fetcher
@@ -41,6 +42,7 @@ class EmailAgentOrchestrator:
         self._task_manager = task_manager
         self._completion_checker = completion_checker
         self._comment_interpreter = comment_interpreter
+        self._reply_resolver = reply_resolver
         self._max_emails = max_emails
 
     def _get_fetcher(self) -> EmailFetcher:
@@ -58,9 +60,16 @@ class EmailAgentOrchestrator:
             self._task_manager = TaskManager()
         return self._task_manager
 
+    def _get_reply_resolver(self) -> ReplyResolver:
+        if self._reply_resolver is None:
+            self._reply_resolver = ReplyResolver()
+        return self._reply_resolver
+
     def _get_completion_checker(self) -> CompletionChecker:
         if self._completion_checker is None:
-            self._completion_checker = CompletionChecker()
+            self._completion_checker = CompletionChecker(
+                reply_resolver=self._get_reply_resolver(),
+            )
         return self._completion_checker
 
     def _get_comment_interpreter(self) -> CommentInterpreter:

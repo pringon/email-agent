@@ -477,10 +477,53 @@ Created `tests/test_comment_interpreter.py` with 80 tests covering:
 - Snooze from today when task has no existing due date
 - Priority line replacement uses multiline regex to find and update `Priority:` prefix in notes
 
+---
+
+## Session 8 — 2026-02-11
+
+### Goal
+Implement T14: Use LLM to infer which tasks a sent reply resolves, replacing the blanket thread completion behavior.
+
+### What We Did
+
+**1. Created ReplyResolver Module**
+- New `ReplyResolver` class in `src/completion/reply_resolver.py` that uses the existing `LLMAdapter` interface to analyze sent reply content against open tasks
+- Follows the same architectural patterns as `EmailAnalyzer`: pluggable adapter, JSON mode, retry logic on parse errors, custom prompt support
+- Prompt templates in `src/completion/prompts.py` instruct the LLM to evaluate each task individually and return a structured JSON response with per-task resolution decisions
+- Response parsing validates returned task IDs against the input list to prevent LLM hallucination issues
+
+**2. Modified CompletionChecker**
+- Replaced blanket `complete_tasks_for_thread()` with LLM-based resolution via `ReplyResolver`
+- Added `fetch_sent_email_body()` method to retrieve full email body using `format="full"` and the existing `extract_body()` parser from the fetcher module
+- Safe default: if the resolver fails, no tasks are completed and the error is recorded
+- `check_thread()` updated to accept `reply_body` and `subject` parameters
+
+**3. Updated Orchestrator Wiring**
+- `EmailAgentOrchestrator` auto-constructs a `ReplyResolver` and passes it to `CompletionChecker`
+- Supports injected `reply_resolver` parameter for testing
+
+**4. Comprehensive Tests**
+- 29 new unit tests across `test_reply_resolver.py` (resolution, prompt construction, parsing, retry logic, edge cases)
+- Rewrote `TestCheckForCompletions` and `TestCheckThread` in `test_completion_checker.py` for the new resolver-based flow
+- Added `TestFetchSentEmailBody` and `TestReplyResolverWiring` test classes
+- 285 total unit tests passing
+
+### Current Status
+
+- T14 is complete
+- Remaining: T10 (CommentInterpreter, in PR #14), T12 (Final QA), T13 (Documentation), T15 (@respond command)
+
+### Decisions Made
+
+- No fallback to blanket completion: if the LLM is unavailable, no tasks are completed (safe default per user preference)
+- ReplyResolver follows the same `LLMAdapter` pattern as EmailAnalyzer for consistency
+- Sent email body is fetched on demand only when a thread match is found (keeps the initial scan efficient)
+- LLM response includes per-task `reason` field for debugging, but only `resolved` boolean is used for completion decisions
+
 ### Test Results
 
 ```
-222 passed in 0.60s
+285 passed in 0.62s
 ```
 
-All unit tests passing (80 new comment interpreter tests + 142 existing tests).
+All unit tests passing (29 new reply resolver/completion tests + 256 existing tests).
