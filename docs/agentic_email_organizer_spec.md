@@ -18,63 +18,91 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 ## 🏗️ High-Level Architecture
 
 ```plaintext
-+-------------------+       +-------------------+       +-----------------------+
-|   Gmail Inbox     | <---> |   Gmail API       |       |                       |
-|                   |       |                   |       |                       |
-+-------------------+       +-------------------+       |                       |
-                                  |                     |                       |
-                                  v                     |                       |
-                        +--------------------+          |                       |
-                        |   Email Parser     |          |      Google Cloud     |
-                        | (via OpenAI GPT)   |--------> |  (Gmail + Tasks APIs) |
-                        +--------------------+          |                       |
-                                  |                     |                       |
-                                  v                     |                       |
-                        +--------------------+          |                       |
-                        |  Task Generator    | -------->+-----------------------+
-                        +--------------------+                   ^
-                                  |                               |
-                                  v                               |
-                     +-----------------------------+              |
-                     | Task Completion Detector     | ------------+
-                     | (Monitors Sent Mail Threads) |
-                     +-----------------------------+
-                                  |
-                                  v
-                   +-----------------------------+
-                   | Daily Digest Generator      |
-                   | (Email/Text Output)         |
-                   +-----------------------------+
+GitHub Actions (cron: every 2 hours)  or  run_agent.py (CLI)
+                          │
+                          ▼
+              ┌───────────────────────┐
+              │ EmailAgentOrchestrator │
+              │   (Pipeline Runner)    │
+              └───────────┬───────────┘
+                          │
+          ┌───────────────┼───────────────┐
+          ▼               ▼               ▼
+   ┌─────────────┐ ┌────────────┐ ┌─────────────┐
+   │  Gmail API  │ │ OpenAI API │ │ Tasks API   │
+   └──────┬──────┘ └─────┬──────┘ └──────┬──────┘
+          │               │               │
+          ▼               ▼               ▼
+  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+  │ EmailFetcher │ │EmailAnalyzer │ │ TaskManager  │
+  │              │ │              │ │              │
+  │ Fetch unread │ │ Extract tasks│ │ Create tasks │
+  │ emails       │→│ via LLM      │→│ (deduplicate)│
+  └──────────────┘ └──────────────┘ └──────┬───────┘
+                                           │
+                          ┌────────────────┤
+                          ▼                ▼
+              ┌──────────────────┐ ┌──────────────┐
+              │CompletionChecker │ │DigestReporter │
+              │                  │ │              │
+              │ Scan Sent Mail,  │ │ Daily summary│
+              │ auto-close tasks │ │ email/text   │
+              └──────────────────┘ └──────────────┘
 ```
+
+### Pipeline Flow
+
+Each orchestrator run executes these steps with per-step error isolation:
+
+1. **Fetch** — `EmailFetcher` retrieves unread emails via Gmail API
+2. **Analyze** — `EmailAnalyzer` sends each email to OpenAI GPT-4, returns structured `AnalysisResult` with summary and `ExtractedTask` list
+3. **Create Tasks** — `TaskManager` deduplicates by email ID, then creates tasks in Google Tasks with embedded email metadata
+4. **Check Completions** — `CompletionChecker` scans Sent Mail for replies to task-related threads, auto-completes matching tasks
+5. **Report** — `DigestReporter` generates a daily digest of pending and completed tasks
 
 ---
 
 ## 🧩 Modules & Components
 
-### 1. `EmailFetcher`
-- Uses Gmail API to fetch unread or recent messages.
-- Maintains state (last message ID or timestamp) to avoid reprocessing.
+### 0. `EmailAgentOrchestrator` (`src/orchestrator/`)
+- Pipeline runner that coordinates all modules in sequence.
+- Executes fetch → analyze → create tasks → check completions → digest.
+- Each step runs with error isolation: a failed step records its error but doesn't block subsequent steps.
+- Produces `PipelineResult` with per-step `StepResult` (success, duration, details, error).
+- Lazy-initializes all dependencies with sensible defaults; accepts injected mocks for testing.
+- CLI entry point: `run_agent.py` with `--max-emails` flag.
 
-### 2. `EmailAnalyzer`
-- Sends email content to OpenAI GPT.
-- Parses summary and action items in structured format (e.g., title, due date, priority).
+### 1. `EmailFetcher` (`src/fetcher/`)
+- Uses Gmail API via `GmailAuthenticator` to fetch unread or recent messages.
+- Returns `Email` dataclass with parsed body (MIME, base64, HTML-to-text), headers, labels, and thread info.
+- Pluggable `StateRepository` interface tracks processed message IDs to avoid reprocessing across runs.
+- Iterator-based pagination for memory efficiency with large inboxes.
 
-### 3. `TaskManager`
-- Interfaces with Google Tasks API.
-- Creates tasks, updates statuses, and tracks metadata (e.g., email thread ID).
+### 2. `EmailAnalyzer` (`src/analyzer/`)
+- Sends email content to an LLM via the `LLMAdapter` interface (current implementation: `OpenAIAdapter` using GPT-4).
+- Returns `AnalysisResult` containing a summary, `requires_response` flag, and a list of `ExtractedTask` objects (title, description, due date, priority, confidence score).
+- Uses JSON mode for structured output parsing.
+- Built-in retry logic (max 2 retries) for transient LLM failures.
 
-### 4. `CompletionChecker`
-- Periodically scans Sent Mail for replies linked to task-related threads.
-- Marks tasks complete when matching replies are detected.
+### 3. `TaskManager` (`src/tasks/`)
+- Full CRUD interface with Google Tasks API via `TasksAuthenticator`.
+- Creates tasks from `ExtractedTask`, embedding email metadata (message ID, thread ID) in task notes using a `---email-agent-metadata---` prefix.
+- Supports lookup by email ID and thread ID for deduplication and reply detection.
+- Auto-creates a default "Email Tasks" list if none exists.
 
-### 5. `CommentInterpreter`
-- Parses user comments (in task notes or terminal flags).
+### 4. `CompletionChecker` (`src/completion/`)
+- Scans Sent Mail for replies linked to task-related threads.
+- Matches sent messages to tasks via embedded thread IDs.
+- Auto-completes tasks in Google Tasks when matching replies are detected.
+
+### 5. `CommentInterpreter` (`src/comments/`)
+- Parses user comments in task notes or terminal flags.
 - Executes relevant action or updates task metadata.
+- Status: planned, not yet implemented.
 
-### 6. `DigestReporter`
-- Compiles daily summaries into:
-  - 📧 Email
-  - 📄 Plain text output (optional log file or CLI print)
+### 6. `DigestReporter` (`src/digest/`)
+- Generates daily summaries with task categorization by due date and status.
+- Supports plain text formatting and email delivery via Gmail API.
 
 ---
 
@@ -92,14 +120,15 @@ An intelligent assistant that processes your Gmail inbox, summarizes messages, e
 
 ## 🚀 Tech Stack
 
-| Layer                 | Technology                     |
-|----------------------|---------------------------------|
-| Scheduler            | `cron` or `APScheduler`         |
-| Language             | Python 3.10+                    |
-| Email Access         | Gmail API (`google-api-python-client`) |
-| AI Integration       | OpenAI GPT-4 via API            |
-| Task Management      | Google Tasks API                |
-| Optional Storage     | Local cache / SQLite            |
+| Layer                 | Technology                                    |
+|----------------------|-----------------------------------------------|
+| Scheduler            | GitHub Actions cron workflows (every 2 hours) |
+| Language             | Python 3.10+                                  |
+| Email Access         | Gmail API (`google-api-python-client`)        |
+| AI Integration       | OpenAI GPT-4 via API (pluggable `LLMAdapter`) |
+| Task Management      | Google Tasks API                              |
+| Storage              | Metadata embedded in Google Tasks notes       |
+| CI/CD                | GitHub Actions (`tests.yml`, `run_agent.yml`) |
 
 ---
 
