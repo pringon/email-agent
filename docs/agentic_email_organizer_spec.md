@@ -146,11 +146,12 @@ Each orchestrator run executes these steps with per-step error isolation:
 | T07     | Link tasks to originating email threads               | High     | T05, T06            | Task Management          | ✅ Complete |
 | T08     | Write logic to detect task completion via Sent Mail   | Medium   | T07                 | Task Management          | ✅ Complete |
 | T09     | Build daily digest generator (email or text output)   | Medium   | T06, T07            | Reporting                | ✅ Complete |
-| T10     | Implement comment parser for task instructions        | Medium   | T06                 | Agentic Features         | ⬚ Pending  |
+| T10     | Implement comment parser for task instructions        | Medium   | T06                 | Agentic Features         | ✅ Complete |
 | T11     | Add scheduler (cron job) to run agent periodically    | High     | T03, T06            | Deployment Ready         | ✅ Complete |
 | T14     | Use LLM to infer which tasks a sent reply resolves    | Medium   | T04, T08            | Task Management          | ⬚ Pending  |
 | T12     | Final testing and QA pass                             | High     | T01–T11, T14        | Finalization             | ⬚ Pending  |
 | T13     | Revise and finalize documentation                     | High     | T12                 | Finalization             | ⬚ Pending  |
+| T15     | Implement @respond command for agent email replies    | Medium   | T10                 | Agentic Features         | ⬚ Pending  |
 
 ### Progress Notes
 
@@ -164,6 +165,7 @@ Each orchestrator run executes these steps with per-step error isolation:
 - **T07** (2026-02-08): Completed as part of T06. Tasks embed thread_id and email_id in notes, with find_tasks_by_thread_id and find_tasks_by_email_id lookup methods.
 - **T08** (2026-02-08): CompletionChecker module implemented. Scans Sent Mail for replies to task-related threads and auto-completes matching tasks. 35 unit tests and 3 e2e tests passing.
 - **T09** (2026-02-10): DigestReporter module implemented with daily task digest generation, plain text formatting, email delivery via Gmail API, and task categorization by due date. 62 unit tests passing.
+- **T10** (2026-02-11): CommentInterpreter module implemented with @command parsing from task notes, six command types (priority, due, snooze, ignore, delete, note), and batch processing. 80 unit tests passing.
 - **T11** (2026-02-10): Orchestrator pipeline and GitHub Actions cron workflow implemented. Runs agent periodically via run_agent.yml with scheduled dispatch.
 
 ---
@@ -174,6 +176,6 @@ Each orchestrator run executes these steps with per-step error isolation:
 - **Core Agent:** T03–T05
 - **Task Management:** T06–T08, T14
 - **Reporting:** T09
-- **Agentic Features:** T10
+- **Agentic Features:** T10, T15
 - **Deployment Ready:** T11
 - **Finalization:** T12–T13
