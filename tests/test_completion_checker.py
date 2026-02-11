@@ -1,5 +1,6 @@
 """Unit tests for the CompletionChecker module."""
 
+import base64
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +11,7 @@ from src.completion import (
     CompletionChecker,
     CompletionError,
     CompletionResult,
+    ReplyResolver,
     SentEmail,
     SentMailAccessError,
 )
@@ -228,11 +230,17 @@ class TestCompletionChecker:
         return MagicMock()
 
     @pytest.fixture
-    def checker(self, mock_gmail_service, mock_task_manager):
+    def mock_reply_resolver(self):
+        """Create a mock ReplyResolver."""
+        return MagicMock(spec=ReplyResolver)
+
+    @pytest.fixture
+    def checker(self, mock_gmail_service, mock_task_manager, mock_reply_resolver):
         """Create a CompletionChecker with mocks."""
         return CompletionChecker(
             gmail_service=mock_gmail_service,
             task_manager=mock_task_manager,
+            reply_resolver=mock_reply_resolver,
         )
 
     def test_init_with_defaults(self):
@@ -241,15 +249,20 @@ class TestCompletionChecker:
         assert checker._authenticator is None
         assert checker._task_manager is None
         assert checker._gmail_service is None
+        assert checker._reply_resolver is None
 
-    def test_init_with_custom_values(self, mock_gmail_service, mock_task_manager):
+    def test_init_with_custom_values(
+        self, mock_gmail_service, mock_task_manager, mock_reply_resolver
+    ):
         """Test initialization with custom values."""
         checker = CompletionChecker(
             gmail_service=mock_gmail_service,
             task_manager=mock_task_manager,
+            reply_resolver=mock_reply_resolver,
         )
         assert checker._gmail_service == mock_gmail_service
         assert checker._task_manager == mock_task_manager
+        assert checker._reply_resolver == mock_reply_resolver
 
 
 class TestFetchSentEmails:
@@ -347,6 +360,52 @@ class TestFetchSentEmails:
         assert call_args.kwargs.get("format") == "metadata"
 
 
+# ==================== Fetch Sent Email Body Tests ====================
+
+
+class TestFetchSentEmailBody:
+    """Tests for fetching the full body of a sent email."""
+
+    @pytest.fixture
+    def mock_gmail_service(self):
+        """Create a mock Gmail API service."""
+        return MagicMock()
+
+    @pytest.fixture
+    def checker(self, mock_gmail_service):
+        """Create a CompletionChecker with mock Gmail service."""
+        return CompletionChecker(gmail_service=mock_gmail_service)
+
+    def test_fetch_body_uses_full_format(self, checker, mock_gmail_service):
+        """Test that body fetch uses format='full'."""
+        body_text = "I've reviewed the proposal."
+        encoded_body = base64.urlsafe_b64encode(body_text.encode()).decode()
+        mock_gmail_service.users().messages().get().execute.return_value = {
+            "id": "msg1",
+            "payload": {
+                "mimeType": "text/plain",
+                "body": {"data": encoded_body},
+            },
+        }
+
+        result = checker.fetch_sent_email_body("msg1")
+
+        call_args = mock_gmail_service.users().messages().get.call_args
+        assert call_args.kwargs.get("format") == "full"
+        assert result == body_text
+
+    def test_fetch_body_handles_api_error(self, checker, mock_gmail_service):
+        """Test that API errors are wrapped in SentMailAccessError."""
+        resp = MagicMock()
+        resp.status = 404
+        mock_gmail_service.users().messages().get().execute.side_effect = HttpError(
+            resp=resp, content=b"Not Found"
+        )
+
+        with pytest.raises(SentMailAccessError):
+            checker.fetch_sent_email_body("msg1")
+
+
 class TestGetThreadIdsWithTasks:
     """Tests for getting thread IDs with associated tasks."""
 
@@ -394,8 +453,11 @@ class TestGetThreadIdsWithTasks:
         assert thread_ids == {"thread1"}
 
 
+# ==================== Check For Completions Tests ====================
+
+
 class TestCheckForCompletions:
-    """Tests for the main check_for_completions method."""
+    """Tests for the main check_for_completions method with ReplyResolver."""
 
     @pytest.fixture
     def mock_gmail_service(self):
@@ -408,12 +470,39 @@ class TestCheckForCompletions:
         return MagicMock()
 
     @pytest.fixture
-    def checker(self, mock_gmail_service, mock_task_manager):
-        """Create a CompletionChecker with mocks."""
+    def mock_reply_resolver(self):
+        """Create a mock ReplyResolver."""
+        return MagicMock(spec=ReplyResolver)
+
+    @pytest.fixture
+    def checker(self, mock_gmail_service, mock_task_manager, mock_reply_resolver):
+        """Create a CompletionChecker with all mocks."""
         return CompletionChecker(
             gmail_service=mock_gmail_service,
             task_manager=mock_task_manager,
+            reply_resolver=mock_reply_resolver,
         )
+
+    def _setup_sent_email(self, mock_gmail_service, msg_id="msg1", thread_id="thread1"):
+        """Helper to setup a sent email in the mock Gmail service."""
+        mock_gmail_service.users().messages().list().execute.return_value = {
+            "messages": [{"id": msg_id, "threadId": thread_id}]
+        }
+        # Metadata fetch for sent email listing
+        mock_gmail_service.users().messages().get().execute.return_value = {
+            "id": msg_id,
+            "threadId": thread_id,
+            "internalDate": "1705315800000",
+            "payload": {
+                "mimeType": "text/plain",
+                "headers": [
+                    {"name": "Subject", "value": "Re: Test"},
+                ],
+                "body": {
+                    "data": base64.urlsafe_b64encode(b"Reply body").decode(),
+                },
+            },
+        }
 
     def test_check_completions_no_tasks(self, checker, mock_task_manager):
         """Test when no tasks exist."""
@@ -425,14 +514,13 @@ class TestCheckForCompletions:
         assert result.total_completed == 0
 
     def test_check_completions_no_matching_threads(
-        self, checker, mock_gmail_service, mock_task_manager
+        self, checker, mock_gmail_service, mock_task_manager, mock_reply_resolver
     ):
         """Test when sent emails don't match any task threads."""
-        # Setup tasks with thread IDs
         tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
         mock_task_manager.list_tasks.return_value = iter(tasks)
 
-        # Setup sent emails with different thread
+        # Sent email from a different thread
         mock_gmail_service.users().messages().list().execute.return_value = {
             "messages": [{"id": "msg1", "threadId": "other_thread"}]
         }
@@ -447,30 +535,22 @@ class TestCheckForCompletions:
 
         assert result.sent_emails_scanned == 1
         assert result.total_completed == 0
-        mock_task_manager.complete_tasks_for_thread.assert_not_called()
+        mock_reply_resolver.resolve.assert_not_called()
 
-    def test_check_completions_completes_matching_tasks(
-        self, checker, mock_gmail_service, mock_task_manager
+    def test_check_completions_uses_resolver(
+        self, checker, mock_gmail_service, mock_task_manager, mock_reply_resolver
     ):
-        """Test that matching tasks are completed."""
-        # Setup tasks
-        tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
-        mock_task_manager.list_tasks.return_value = iter(tasks)
+        """Test that the resolver is called for matching threads."""
+        open_tasks = [
+            Task(title="Task 1", id="t1", source_thread_id="thread1"),
+            Task(title="Task 2", id="t2", source_thread_id="thread1"),
+        ]
+        mock_task_manager.list_tasks.return_value = iter(open_tasks)
+        mock_task_manager.find_tasks_by_thread_id.return_value = open_tasks
+        self._setup_sent_email(mock_gmail_service)
 
-        # Setup sent email matching the task's thread
-        mock_gmail_service.users().messages().list().execute.return_value = {
-            "messages": [{"id": "msg1", "threadId": "thread1"}]
-        }
-        mock_gmail_service.users().messages().get().execute.return_value = {
-            "id": "msg1",
-            "threadId": "thread1",
-            "internalDate": "1705315800000",
-            "payload": {"headers": []},
-        }
-
-        # Setup completion result
-        completed_task = Task(title="Task", id="t1", status=TaskStatus.COMPLETED)
-        mock_task_manager.complete_tasks_for_thread.return_value = [completed_task]
+        # Resolver says only t1 is resolved
+        mock_reply_resolver.resolve.return_value = ["t1"]
 
         result = checker.check_for_completions()
 
@@ -478,70 +558,140 @@ class TestCheckForCompletions:
         assert result.threads_matched == 1
         assert result.total_completed == 1
         assert "t1" in result.tasks_completed
-        mock_task_manager.complete_tasks_for_thread.assert_called_once_with("thread1")
+
+        # Only t1 should be completed, not t2
+        mock_task_manager.complete_task.assert_called_once_with("t1")
+
+    def test_check_completions_resolver_returns_empty(
+        self, checker, mock_gmail_service, mock_task_manager, mock_reply_resolver
+    ):
+        """Test when resolver determines no tasks are resolved."""
+        open_tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
+        mock_task_manager.list_tasks.return_value = iter(open_tasks)
+        mock_task_manager.find_tasks_by_thread_id.return_value = open_tasks
+        self._setup_sent_email(mock_gmail_service)
+
+        mock_reply_resolver.resolve.return_value = []
+
+        result = checker.check_for_completions()
+
+        assert result.sent_emails_scanned == 1
+        assert result.total_completed == 0
+        mock_task_manager.complete_task.assert_not_called()
+
+    def test_check_completions_resolver_resolves_all(
+        self, checker, mock_gmail_service, mock_task_manager, mock_reply_resolver
+    ):
+        """Test when resolver determines all tasks are resolved."""
+        open_tasks = [
+            Task(title="Task 1", id="t1", source_thread_id="thread1"),
+            Task(title="Task 2", id="t2", source_thread_id="thread1"),
+        ]
+        mock_task_manager.list_tasks.return_value = iter(open_tasks)
+        mock_task_manager.find_tasks_by_thread_id.return_value = open_tasks
+        self._setup_sent_email(mock_gmail_service)
+
+        mock_reply_resolver.resolve.return_value = ["t1", "t2"]
+
+        result = checker.check_for_completions()
+
+        assert result.total_completed == 2
+        assert mock_task_manager.complete_task.call_count == 2
+
+    def test_check_completions_fetches_body_for_resolver(
+        self, checker, mock_gmail_service, mock_task_manager, mock_reply_resolver
+    ):
+        """Test that the sent email body is fetched for the resolver."""
+        open_tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
+        mock_task_manager.list_tasks.return_value = iter(open_tasks)
+        mock_task_manager.find_tasks_by_thread_id.return_value = open_tasks
+        self._setup_sent_email(mock_gmail_service)
+        mock_reply_resolver.resolve.return_value = ["t1"]
+
+        checker.check_for_completions()
+
+        # Resolver should receive the reply body and subject
+        call_kwargs = mock_reply_resolver.resolve.call_args.kwargs
+        assert "reply_body" in call_kwargs
+        assert "subject" in call_kwargs
+        assert "tasks" in call_kwargs
 
     def test_check_completions_deduplicates_threads(
-        self, checker, mock_gmail_service, mock_task_manager
+        self, checker, mock_gmail_service, mock_task_manager, mock_reply_resolver
     ):
-        """Test that multiple emails in same thread only complete once."""
-        # Setup tasks
-        tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
-        mock_task_manager.list_tasks.return_value = iter(tasks)
+        """Test that multiple emails in same thread only process once."""
+        open_tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
+        mock_task_manager.list_tasks.return_value = iter(open_tasks)
+        mock_task_manager.find_tasks_by_thread_id.return_value = open_tasks
 
-        # Setup multiple sent emails in same thread
+        # Two sent emails in the same thread
         mock_gmail_service.users().messages().list().execute.return_value = {
             "messages": [
                 {"id": "msg1", "threadId": "thread1"},
-                {"id": "msg2", "threadId": "thread1"},  # Same thread
+                {"id": "msg2", "threadId": "thread1"},
             ]
         }
-        # Return different messages for each get() call
+        # The get() calls are interleaved: listing yields msg1, then body is
+        # fetched for msg1 before the generator continues to yield msg2.
         mock_gmail_service.users().messages().get().execute.side_effect = [
+            # 1st get: metadata for msg1 (listing)
             {
                 "id": "msg1",
                 "threadId": "thread1",
                 "internalDate": "1705315800000",
-                "payload": {"headers": []},
+                "payload": {
+                    "mimeType": "text/plain",
+                    "headers": [{"name": "Subject", "value": "Re: Test"}],
+                    "body": {
+                        "data": base64.urlsafe_b64encode(b"Reply").decode(),
+                    },
+                },
             },
+            # 2nd get: full body for msg1 (fetch_sent_email_body, interleaved)
+            {
+                "id": "msg1",
+                "threadId": "thread1",
+                "payload": {
+                    "mimeType": "text/plain",
+                    "body": {
+                        "data": base64.urlsafe_b64encode(b"Reply").decode(),
+                    },
+                },
+            },
+            # 3rd get: metadata for msg2 (listing resumes)
             {
                 "id": "msg2",
                 "threadId": "thread1",
                 "internalDate": "1705316000000",
-                "payload": {"headers": []},
+                "payload": {
+                    "mimeType": "text/plain",
+                    "headers": [{"name": "Subject", "value": "Re: Test"}],
+                    "body": {
+                        "data": base64.urlsafe_b64encode(b"Reply 2").decode(),
+                    },
+                },
             },
         ]
 
-        completed_task = Task(title="Task", id="t1", status=TaskStatus.COMPLETED)
-        mock_task_manager.complete_tasks_for_thread.return_value = [completed_task]
+        mock_reply_resolver.resolve.return_value = ["t1"]
 
         result = checker.check_for_completions()
 
         assert result.sent_emails_scanned == 2
-        assert result.threads_matched == 1  # Only one thread matched
-        # complete_tasks_for_thread should only be called once
-        mock_task_manager.complete_tasks_for_thread.assert_called_once()
+        assert result.threads_matched == 1
+        # Resolver should only be called once for the thread
+        mock_reply_resolver.resolve.assert_called_once()
 
-    def test_check_completions_handles_completion_error(
-        self, checker, mock_gmail_service, mock_task_manager
+    def test_check_completions_resolver_error_no_tasks_completed(
+        self, checker, mock_gmail_service, mock_task_manager, mock_reply_resolver
     ):
-        """Test that errors during completion are recorded."""
-        # Setup tasks
-        tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
-        mock_task_manager.list_tasks.return_value = iter(tasks)
+        """Test that resolver errors result in no tasks being completed."""
+        open_tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
+        mock_task_manager.list_tasks.return_value = iter(open_tasks)
+        mock_task_manager.find_tasks_by_thread_id.return_value = open_tasks
+        self._setup_sent_email(mock_gmail_service)
 
-        # Setup sent email
-        mock_gmail_service.users().messages().list().execute.return_value = {
-            "messages": [{"id": "msg1", "threadId": "thread1"}]
-        }
-        mock_gmail_service.users().messages().get().execute.return_value = {
-            "id": "msg1",
-            "threadId": "thread1",
-            "internalDate": "1705315800000",
-            "payload": {"headers": []},
-        }
-
-        # Setup completion to fail
-        mock_task_manager.complete_tasks_for_thread.side_effect = Exception("API error")
+        mock_reply_resolver.resolve.side_effect = Exception("LLM error")
 
         result = checker.check_for_completions()
 
@@ -549,6 +699,61 @@ class TestCheckForCompletions:
         assert result.total_completed == 0
         assert len(result.errors) == 1
         assert "thread1" in result.errors[0]
+        mock_task_manager.complete_task.assert_not_called()
+
+    def test_check_completions_body_fetch_error_no_tasks_completed(
+        self, mock_gmail_service, mock_task_manager, mock_reply_resolver
+    ):
+        """Test that body fetch errors result in no tasks being completed."""
+        open_tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
+        mock_task_manager.list_tasks.return_value = iter(open_tasks)
+        mock_task_manager.find_tasks_by_thread_id.return_value = open_tasks
+
+        # Setup metadata fetch to succeed (for listing)
+        mock_gmail_service.users().messages().list().execute.return_value = {
+            "messages": [{"id": "msg1", "threadId": "thread1"}]
+        }
+        # First get call returns metadata, second (body fetch) raises error
+        resp = MagicMock()
+        resp.status = 500
+        mock_gmail_service.users().messages().get().execute.side_effect = [
+            {
+                "id": "msg1",
+                "threadId": "thread1",
+                "internalDate": "1705315800000",
+                "payload": {"headers": [{"name": "Subject", "value": "Re: Test"}]},
+            },
+            HttpError(resp=resp, content=b"Server Error"),
+        ]
+
+        checker = CompletionChecker(
+            gmail_service=mock_gmail_service,
+            task_manager=mock_task_manager,
+            reply_resolver=mock_reply_resolver,
+        )
+
+        result = checker.check_for_completions()
+
+        assert result.total_completed == 0
+        assert len(result.errors) == 1
+        mock_task_manager.complete_task.assert_not_called()
+
+    def test_check_completions_skips_thread_with_no_open_tasks(
+        self, checker, mock_gmail_service, mock_task_manager, mock_reply_resolver
+    ):
+        """Test that threads with no open tasks are skipped."""
+        # Thread shows up in initial scan but has no open tasks when looked up
+        tasks = [Task(title="Task", id="t1", source_thread_id="thread1")]
+        mock_task_manager.list_tasks.return_value = iter(tasks)
+        mock_task_manager.find_tasks_by_thread_id.return_value = []
+        self._setup_sent_email(mock_gmail_service)
+
+        result = checker.check_for_completions()
+
+        mock_reply_resolver.resolve.assert_not_called()
+
+
+# ==================== Check Thread Tests ====================
 
 
 class TestCheckThread:
@@ -560,30 +765,71 @@ class TestCheckThread:
         return MagicMock()
 
     @pytest.fixture
-    def checker(self, mock_task_manager):
-        """Create a CompletionChecker with mock TaskManager."""
-        return CompletionChecker(task_manager=mock_task_manager)
+    def mock_reply_resolver(self):
+        """Create a mock ReplyResolver."""
+        return MagicMock(spec=ReplyResolver)
 
-    def test_check_thread_completes_tasks(self, checker, mock_task_manager):
-        """Test completing tasks for a specific thread."""
-        completed_tasks = [
-            Task(title="Task 1", id="t1", status=TaskStatus.COMPLETED),
-            Task(title="Task 2", id="t2", status=TaskStatus.COMPLETED),
+    @pytest.fixture
+    def checker(self, mock_task_manager, mock_reply_resolver):
+        """Create a CompletionChecker with mock dependencies."""
+        return CompletionChecker(
+            task_manager=mock_task_manager,
+            reply_resolver=mock_reply_resolver,
+        )
+
+    def test_check_thread_uses_resolver(
+        self, checker, mock_task_manager, mock_reply_resolver
+    ):
+        """Test that check_thread uses the resolver."""
+        open_tasks = [
+            Task(title="Task 1", id="t1"),
+            Task(title="Task 2", id="t2"),
         ]
-        mock_task_manager.complete_tasks_for_thread.return_value = completed_tasks
+        mock_task_manager.find_tasks_by_thread_id.return_value = open_tasks
+        mock_reply_resolver.resolve.return_value = ["t1"]
 
-        task_ids = checker.check_thread("thread123")
+        task_ids = checker.check_thread(
+            "thread123", reply_body="I handled task 1", subject="Re: Tasks"
+        )
 
-        assert task_ids == ["t1", "t2"]
-        mock_task_manager.complete_tasks_for_thread.assert_called_once_with("thread123")
+        assert task_ids == ["t1"]
+        mock_reply_resolver.resolve.assert_called_once_with(
+            reply_body="I handled task 1",
+            subject="Re: Tasks",
+            tasks=open_tasks,
+        )
+        mock_task_manager.complete_task.assert_called_once_with("t1")
 
-    def test_check_thread_no_tasks(self, checker, mock_task_manager):
-        """Test when thread has no associated tasks."""
-        mock_task_manager.complete_tasks_for_thread.return_value = []
+    def test_check_thread_no_open_tasks(
+        self, checker, mock_task_manager, mock_reply_resolver
+    ):
+        """Test when thread has no open tasks."""
+        mock_task_manager.find_tasks_by_thread_id.return_value = []
 
-        task_ids = checker.check_thread("thread123")
+        task_ids = checker.check_thread(
+            "thread123", reply_body="Some reply", subject="Re: Test"
+        )
 
         assert task_ids == []
+        mock_reply_resolver.resolve.assert_not_called()
+
+    def test_check_thread_resolver_returns_empty(
+        self, checker, mock_task_manager, mock_reply_resolver
+    ):
+        """Test when resolver says no tasks resolved."""
+        open_tasks = [Task(title="Task", id="t1")]
+        mock_task_manager.find_tasks_by_thread_id.return_value = open_tasks
+        mock_reply_resolver.resolve.return_value = []
+
+        task_ids = checker.check_thread(
+            "thread123", reply_body="Unrelated reply", subject="Re: FYI"
+        )
+
+        assert task_ids == []
+        mock_task_manager.complete_task.assert_not_called()
+
+
+# ==================== Parse Sent Message Tests ====================
 
 
 class TestParseSentMessage:

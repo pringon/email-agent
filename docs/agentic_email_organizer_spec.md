@@ -93,8 +93,8 @@ Each orchestrator run executes these steps with per-step error isolation:
 ### 4. `CompletionChecker` (`src/completion/`)
 - Scans Sent Mail for replies linked to task-related threads.
 - Matches sent messages to tasks via embedded thread IDs.
-- Auto-completes tasks in Google Tasks when matching replies are detected.
-- **Current limitation (T14):** Currently assumes any reply to a thread completes all tasks from that thread. A future improvement will use the LLM to analyze the sent reply content and infer which specific tasks were actually addressed, rather than blanket-completing all tasks for the thread.
+- Uses `ReplyResolver` (LLM-based) to analyze sent reply content and determine which specific tasks are addressed, completing only those tasks.
+- If the LLM resolution fails for a thread, no tasks are completed (safe default) and the error is recorded.
 
 ### 5. `CommentInterpreter` (`src/comments/`)
 - Parses user comments in task notes or terminal flags.
@@ -148,7 +148,7 @@ Each orchestrator run executes these steps with per-step error isolation:
 | T09     | Build daily digest generator (email or text output)   | Medium   | T06, T07            | Reporting                | ✅ Complete |
 | T10     | Implement comment parser for task instructions        | Medium   | T06                 | Agentic Features         | ✅ Complete |
 | T11     | Add scheduler (cron job) to run agent periodically    | High     | T03, T06            | Deployment Ready         | ✅ Complete |
-| T14     | Use LLM to infer which tasks a sent reply resolves    | Medium   | T04, T08            | Task Management          | ⬚ Pending  |
+| T14     | Use LLM to infer which tasks a sent reply resolves    | Medium   | T04, T08            | Task Management          | ✅ Complete |
 | T12     | Final testing and QA pass                             | High     | T01–T11, T14        | Finalization             | ⬚ Pending  |
 | T13     | Revise and finalize documentation                     | High     | T12                 | Finalization             | ⬚ Pending  |
 | T15     | Implement @respond command for agent email replies    | Medium   | T10                 | Agentic Features         | ⬚ Pending  |
@@ -167,6 +167,7 @@ Each orchestrator run executes these steps with per-step error isolation:
 - **T09** (2026-02-10): DigestReporter module implemented with daily task digest generation, plain text formatting, email delivery via Gmail API, and task categorization by due date. 62 unit tests passing.
 - **T10** (2026-02-11): CommentInterpreter module implemented with @command parsing from task notes, six command types (priority, due, snooze, ignore, delete, note), and batch processing. 80 unit tests passing.
 - **T11** (2026-02-10): Orchestrator pipeline and GitHub Actions cron workflow implemented. Runs agent periodically via run_agent.yml with scheduled dispatch.
+- **T14** (2026-02-11): ReplyResolver module implemented. Uses LLM to analyze sent reply content against open tasks and determine which specific tasks are resolved, replacing blanket thread completion. 29 new unit tests, 285 total passing.
 
 ---
 

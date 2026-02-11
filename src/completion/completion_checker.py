@@ -7,23 +7,21 @@ from typing import Iterator, Optional
 from googleapiclient.discovery import Resource
 from googleapiclient.errors import HttpError
 
-from src.fetcher.body_parser import extract_email_address
+from src.fetcher.body_parser import extract_body, extract_email_address
 from src.fetcher.gmail_auth import GmailAuthenticator
 from src.tasks import TaskManager
 
 from .exceptions import SentMailAccessError
 from .models import CompletionResult, SentEmail
+from .reply_resolver import ReplyResolver
 
 
 class CompletionChecker:
     """Detects task completion by monitoring Sent Mail for replies.
 
     Scans the user's Sent Mail for outgoing messages, matches their
-    thread IDs against existing tasks, and marks matching tasks as
-    complete.
-
-    The assumption is: if the user replied to an email thread that
-    generated tasks, those tasks are considered handled.
+    thread IDs against existing tasks, and uses an LLM (via ReplyResolver)
+    to determine which specific tasks each reply addresses.
 
     Example usage:
         checker = CompletionChecker()
@@ -43,6 +41,7 @@ class CompletionChecker:
         authenticator: Optional[GmailAuthenticator] = None,
         task_manager: Optional[TaskManager] = None,
         gmail_service: Optional[Resource] = None,
+        reply_resolver: Optional[ReplyResolver] = None,
     ):
         """Initialize the CompletionChecker.
 
@@ -53,10 +52,13 @@ class CompletionChecker:
                 Created with defaults if not provided.
             gmail_service: Pre-configured Gmail API service for testing.
                 Takes precedence over authenticator.
+            reply_resolver: ReplyResolver for LLM-based task resolution.
+                Created with defaults if not provided.
         """
         self._authenticator = authenticator
         self._task_manager = task_manager
         self._gmail_service = gmail_service
+        self._reply_resolver = reply_resolver
 
     def _get_gmail_service(self) -> Resource:
         """Get Gmail API service, creating if needed."""
@@ -71,6 +73,12 @@ class CompletionChecker:
         if self._task_manager is None:
             self._task_manager = TaskManager()
         return self._task_manager
+
+    def _get_reply_resolver(self) -> ReplyResolver:
+        """Get ReplyResolver, creating if needed."""
+        if self._reply_resolver is None:
+            self._reply_resolver = ReplyResolver()
+        return self._reply_resolver
 
     def _parse_sent_message(self, message: dict) -> SentEmail:
         """Parse Gmail API message into SentEmail object.
@@ -171,6 +179,32 @@ class CompletionChecker:
         except HttpError as e:
             raise SentMailAccessError(str(e)) from e
 
+    def fetch_sent_email_body(self, message_id: str) -> str:
+        """Fetch the full body text of a sent email.
+
+        Args:
+            message_id: Gmail message ID.
+
+        Returns:
+            Plain text body of the email.
+
+        Raises:
+            SentMailAccessError: If unable to fetch the message.
+        """
+        try:
+            service = self._get_gmail_service()
+            message = (
+                service.users()
+                .messages()
+                .get(userId="me", id=message_id, format="full")
+                .execute()
+            )
+            payload = message.get("payload", {})
+            body, _ = extract_body(payload)
+            return body
+        except HttpError as e:
+            raise SentMailAccessError(str(e)) from e
+
     def get_thread_ids_with_tasks(
         self,
         include_completed: bool = False,
@@ -203,7 +237,12 @@ class CompletionChecker:
         This is the main entry point. It:
         1. Fetches recent sent emails
         2. Gets thread IDs with open tasks
-        3. For each sent email in a matching thread, completes tasks
+        3. For each sent email in a matching thread, uses the LLM to
+           determine which tasks the reply addresses
+        4. Completes only the resolved tasks
+
+        If the LLM resolution fails for a thread, no tasks are completed
+        for that thread (safe default) and the error is recorded.
 
         Args:
             since: Only check emails sent after this time.
@@ -215,6 +254,7 @@ class CompletionChecker:
         """
         result = CompletionResult()
         task_manager = self._get_task_manager()
+        reply_resolver = self._get_reply_resolver()
 
         # Get threads that have open tasks
         try:
@@ -242,14 +282,25 @@ class CompletionChecker:
                 # Check if this thread has tasks
                 if sent_email.thread_id in threads_with_tasks:
                     try:
-                        completed_tasks = task_manager.complete_tasks_for_thread(
-                            sent_email.thread_id
+                        open_tasks = task_manager.find_tasks_by_thread_id(
+                            sent_email.thread_id, include_completed=False
                         )
-                        task_ids = [t.id for t in completed_tasks if t.id]
-                        result.add_completed_tasks(sent_email.thread_id, task_ids)
+                        if open_tasks:
+                            reply_body = self.fetch_sent_email_body(sent_email.id)
+                            resolved_ids = reply_resolver.resolve(
+                                reply_body=reply_body,
+                                subject=sent_email.subject,
+                                tasks=open_tasks,
+                            )
+                            for task_id in resolved_ids:
+                                task_manager.complete_task(task_id)
+                            result.add_completed_tasks(
+                                sent_email.thread_id, resolved_ids
+                            )
                     except Exception as e:
                         result.add_error(
-                            f"Failed to complete tasks for thread {sent_email.thread_id}: {e}"
+                            f"Failed to resolve tasks for thread "
+                            f"{sent_email.thread_id}: {e}"
                         )
 
                 processed_threads.add(sent_email.thread_id)
@@ -259,17 +310,38 @@ class CompletionChecker:
 
         return result
 
-    def check_thread(self, thread_id: str) -> list[str]:
+    def check_thread(
+        self,
+        thread_id: str,
+        reply_body: str,
+        subject: str = "",
+    ) -> list[str]:
         """Check and complete tasks for a specific thread.
 
-        Useful for targeted completion when you know a reply was sent.
+        Uses the LLM to determine which tasks the reply addresses.
 
         Args:
             thread_id: Gmail thread ID to check.
+            reply_body: Plain text body of the sent reply.
+            subject: Email subject for context.
 
         Returns:
             List of task IDs that were completed.
         """
         task_manager = self._get_task_manager()
-        completed_tasks = task_manager.complete_tasks_for_thread(thread_id)
-        return [t.id for t in completed_tasks if t.id]
+        reply_resolver = self._get_reply_resolver()
+
+        open_tasks = task_manager.find_tasks_by_thread_id(
+            thread_id, include_completed=False
+        )
+        if not open_tasks:
+            return []
+
+        resolved_ids = reply_resolver.resolve(
+            reply_body=reply_body,
+            subject=subject,
+            tasks=open_tasks,
+        )
+        for task_id in resolved_ids:
+            task_manager.complete_task(task_id)
+        return resolved_ids
