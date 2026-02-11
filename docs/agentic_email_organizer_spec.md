@@ -94,6 +94,7 @@ Each orchestrator run executes these steps with per-step error isolation:
 - Scans Sent Mail for replies linked to task-related threads.
 - Matches sent messages to tasks via embedded thread IDs.
 - Auto-completes tasks in Google Tasks when matching replies are detected.
+- **Current limitation (T14):** Currently assumes any reply to a thread completes all tasks from that thread. A future improvement will use the LLM to analyze the sent reply content and infer which specific tasks were actually addressed, rather than blanket-completing all tasks for the thread.
 
 ### 5. `CommentInterpreter` (`src/comments/`)
 - Parses user comments in task notes or terminal flags.
@@ -147,7 +148,8 @@ Each orchestrator run executes these steps with per-step error isolation:
 | T09     | Build daily digest generator (email or text output)   | Medium   | T06, T07            | Reporting                | ✅ Complete |
 | T10     | Implement comment parser for task instructions        | Medium   | T06                 | Agentic Features         | ⬚ Pending  |
 | T11     | Add scheduler (cron job) to run agent periodically    | High     | T03, T06            | Deployment Ready         | ✅ Complete |
-| T12     | Final testing and QA pass                             | High     | T01–T11             | Finalization             | ⬚ Pending  |
+| T14     | Use LLM to infer which tasks a sent reply resolves    | Medium   | T04, T08            | Task Management          | ⬚ Pending  |
+| T12     | Final testing and QA pass                             | High     | T01–T11, T14        | Finalization             | ⬚ Pending  |
 | T13     | Revise and finalize documentation                     | High     | T12                 | Finalization             | ⬚ Pending  |
 
 ### Progress Notes
@@ -170,7 +172,7 @@ Each orchestrator run executes these steps with per-step error isolation:
 
 - **Initialization:** T01–T02
 - **Core Agent:** T03–T05
-- **Task Management:** T06–T08
+- **Task Management:** T06–T08, T14
 - **Reporting:** T09
 - **Agentic Features:** T10
 - **Deployment Ready:** T11
