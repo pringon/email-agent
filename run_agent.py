@@ -6,6 +6,7 @@ import sys
 
 from dotenv import load_dotenv
 
+from src.digest import DigestReporter
 from src.orchestrator import EmailAgentOrchestrator
 
 
@@ -29,7 +30,23 @@ def main() -> int:
         action="store_true",
         help="Check Sent Mail for replies and complete matching tasks",
     )
+    parser.add_argument(
+        "--send-digest",
+        metavar="EMAIL",
+        help="Generate and send a daily digest to the given email address",
+    )
     args = parser.parse_args()
+
+    if args.send_digest:
+
+        reporter = DigestReporter()
+        delivery = reporter.generate_and_send(recipient=args.send_digest)
+        print(delivery.plain_text_output or "(no output)")
+        if delivery.errors:
+            for err in delivery.errors:
+                print(f"ERROR: {err}", file=sys.stderr)
+            return 1
+        return 0
 
     orchestrator = EmailAgentOrchestrator(max_emails=args.max_emails)
     if args.check_completions:
