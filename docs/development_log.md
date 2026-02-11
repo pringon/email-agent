@@ -408,3 +408,79 @@ Created `tests/test_digest_reporter.py` with 62 tests covering:
 ```
 
 All unit tests passing (62 new digest reporter tests + 125 existing tests).
+
+---
+
+## Session 7 — 2026-02-11
+
+### Goal
+Complete T10 by implementing the CommentInterpreter module for parsing user commands in task notes.
+
+### What We Did
+
+**1. Implemented CommentInterpreter Module Structure**
+
+Created the following files in `src/comments/`:
+- `models.py` — CommandType enum, ParsedCommand, CommandResult, ProcessingResult dataclasses
+- `exceptions.py` — CommentError, CommentParseError, CommentExecutionError
+- `comment_interpreter.py` — Main CommentInterpreter class with command parsing and execution
+- `__init__.py` — Public API exports
+
+**2. Supported Commands**
+
+Six command types using `@command` syntax in task notes:
+- `@priority <level>` — Change task priority (low, medium, high, urgent)
+- `@due <YYYY-MM-DD>` — Set absolute due date
+- `@snooze <N> <days|weeks>` — Push due date forward by relative offset
+- `@ignore` — Mark task as completed (dismiss)
+- `@delete` — Delete the task entirely
+- `@note <text>` — Append additional context to notes
+
+**3. Key Design Decisions**
+
+- **`@` prefix for commands**: Intuitive for users; doesn't conflict with URLs or markdown syntax
+- **Case-insensitive parsing**: Reduces friction on mobile where autocorrect may capitalize
+- **Command removal after processing**: Prevents re-execution on next agent run
+- **Single update per task**: All commands batched before one `update_task()` call to minimize API calls
+- **`@delete` takes precedence over `@ignore`**: Deletion is the stronger action when both are present
+- **Priority stored in notes text**: Google Tasks has no native priority field; follows existing pattern from `create_from_extracted_task()`
+- **Never raises from main entry point**: `process_pending_tasks()` returns `ProcessingResult`, following `DigestReporter.generate_and_send()` pattern
+
+**4. Created Comprehensive Unit Tests**
+
+Created `tests/test_comment_interpreter.py` with 80 tests covering:
+- CommandType enum values
+- ParsedCommand serialization/deserialization roundtrip
+- CommandResult success and failure construction
+- ProcessingResult aggregation and error tracking
+- Exception hierarchy and message formatting
+- Command parsing (single, multiple, case-insensitive, mixed content, edge cases)
+- Note stripping after command processing
+- All six command executors (priority, due, snooze, ignore, delete, note)
+- Full _process_task flow (parse, execute, clean, update/delete)
+- Main process_pending_tasks entry point (empty list, multiple tasks, error handling, stats aggregation)
+
+**5. Updated Project Roadmap**
+
+- Marked T10 as complete in spec
+- Added T15: Implement `@respond` command for agent-initiated email replies (future agentic feature)
+
+### Current Status
+
+- **Completed:** T10 (CommentInterpreter module fully implemented)
+- **Next Up:** T12 (Final testing and QA pass) or T15 (@respond command)
+
+### Decisions Made
+
+- Using regex `^@(\w+)\s*(.*?)\s*$` for command matching — requires @ at start of line
+- Unrecognized @commands silently skipped (users may use @ for other purposes)
+- Snooze from today when task has no existing due date
+- Priority line replacement uses multiline regex to find and update `Priority:` prefix in notes
+
+### Test Results
+
+```
+222 passed in 0.60s
+```
+
+All unit tests passing (80 new comment interpreter tests + 142 existing tests).
