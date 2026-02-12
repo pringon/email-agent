@@ -8,7 +8,7 @@ from src.fetcher import Email
 
 from .adapter import LLMAdapter
 from .exceptions import LLMResponseError
-from .models import AnalysisResult, ExtractedTask, Message, MessageRole, Priority
+from .models import AnalysisResult, EmailType, ExtractedTask, Message, MessageRole, Priority
 from .openai_adapter import OpenAIAdapter
 from .prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 
@@ -110,6 +110,12 @@ class EmailAnalyzer:
                 raw_response=response,
             ) from e
 
+        email_type_str = data.get("email_type", "personal")
+        try:
+            email_type = EmailType(email_type_str)
+        except ValueError:
+            email_type = EmailType.PERSONAL
+
         tasks = []
         for task_data in data.get("tasks", []):
             try:
@@ -135,6 +141,7 @@ class EmailAnalyzer:
             email_id=email.id,
             thread_id=email.thread_id,
             summary=data.get("summary", ""),
+            email_type=email_type,
             tasks=tasks,
             requires_response=data.get("requires_response", False),
             sender_name=email.sender,

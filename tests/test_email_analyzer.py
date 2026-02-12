@@ -9,6 +9,7 @@ import pytest
 from src.analyzer import (
     AnalysisResult,
     EmailAnalyzer,
+    EmailType,
     ExtractedTask,
     LLMAdapter,
     LLMAuthenticationError,
@@ -37,6 +38,31 @@ class TestPriority:
         """Test creating priority from string."""
         assert Priority("low") == Priority.LOW
         assert Priority("urgent") == Priority.URGENT
+
+
+class TestEmailType:
+    """Tests for EmailType enum."""
+
+    def test_email_type_values(self):
+        """Test email type enum values."""
+        assert EmailType.PERSONAL.value == "personal"
+        assert EmailType.NEWSLETTER.value == "newsletter"
+        assert EmailType.MARKETING.value == "marketing"
+        assert EmailType.AUTOMATED.value == "automated"
+        assert EmailType.NOTIFICATION.value == "notification"
+
+    def test_is_actionable(self):
+        """Test that only personal emails are actionable."""
+        assert EmailType.PERSONAL.is_actionable is True
+        assert EmailType.NEWSLETTER.is_actionable is False
+        assert EmailType.MARKETING.is_actionable is False
+        assert EmailType.AUTOMATED.is_actionable is False
+        assert EmailType.NOTIFICATION.is_actionable is False
+
+    def test_from_string(self):
+        """Test creating email type from string."""
+        assert EmailType("newsletter") == EmailType.NEWSLETTER
+        assert EmailType("personal") == EmailType.PERSONAL
 
 
 class TestMessage:
@@ -186,6 +212,7 @@ class TestAnalysisResult:
         data = result.to_dict()
         assert data["email_id"] == "msg123"
         assert data["summary"] == "Request to review document"
+        assert data["email_type"] == "personal"
         assert data["requires_response"] is True
         assert len(data["tasks"]) == 1
         assert data["tasks"][0]["title"] == "Review doc"
@@ -201,6 +228,19 @@ class TestAnalysisResult:
         data = result.to_dict()
         assert data["tasks"] == []
         assert data["requires_response"] is False
+        assert data["email_type"] == "personal"
+
+    def test_to_dict_newsletter(self):
+        """Test serialization with newsletter type."""
+        result = AnalysisResult(
+            email_id="msg123",
+            thread_id="thread456",
+            summary="Daily market roundup",
+            email_type=EmailType.NEWSLETTER,
+        )
+
+        data = result.to_dict()
+        assert data["email_type"] == "newsletter"
 
     def test_from_dict(self):
         """Test result deserialization."""
@@ -208,6 +248,7 @@ class TestAnalysisResult:
             "email_id": "msg123",
             "thread_id": "thread456",
             "summary": "Request to review",
+            "email_type": "personal",
             "tasks": [
                 {
                     "title": "Review doc",
@@ -226,9 +267,46 @@ class TestAnalysisResult:
 
         result = AnalysisResult.from_dict(data)
         assert result.email_id == "msg123"
+        assert result.email_type == EmailType.PERSONAL
         assert result.requires_response is True
         assert len(result.tasks) == 1
         assert result.tasks[0].title == "Review doc"
+
+    def test_from_dict_newsletter(self):
+        """Test deserialization with newsletter type."""
+        data = {
+            "email_id": "msg123",
+            "thread_id": "thread456",
+            "summary": "Weekly digest",
+            "email_type": "newsletter",
+            "tasks": [],
+        }
+
+        result = AnalysisResult.from_dict(data)
+        assert result.email_type == EmailType.NEWSLETTER
+
+    def test_from_dict_missing_email_type_defaults_to_personal(self):
+        """Test that missing email_type defaults to personal."""
+        data = {
+            "email_id": "msg123",
+            "thread_id": "thread456",
+            "summary": "Test",
+        }
+
+        result = AnalysisResult.from_dict(data)
+        assert result.email_type == EmailType.PERSONAL
+
+    def test_from_dict_invalid_email_type_defaults_to_personal(self):
+        """Test that invalid email_type defaults to personal."""
+        data = {
+            "email_id": "msg123",
+            "thread_id": "thread456",
+            "summary": "Test",
+            "email_type": "unknown_type",
+        }
+
+        result = AnalysisResult.from_dict(data)
+        assert result.email_type == EmailType.PERSONAL
 
     def test_roundtrip(self):
         """Test serialization roundtrip."""
@@ -245,6 +323,7 @@ class TestAnalysisResult:
             email_id="msg123",
             thread_id="thread456",
             summary="Summary text",
+            email_type=EmailType.PERSONAL,
             tasks=[task],
             requires_response=True,
             sender_name="Sender",
@@ -253,8 +332,21 @@ class TestAnalysisResult:
         restored = AnalysisResult.from_dict(original.to_dict())
         assert restored.email_id == original.email_id
         assert restored.summary == original.summary
+        assert restored.email_type == original.email_type
         assert restored.requires_response == original.requires_response
         assert len(restored.tasks) == 1
+
+    def test_roundtrip_newsletter(self):
+        """Test serialization roundtrip for newsletter."""
+        original = AnalysisResult(
+            email_id="msg123",
+            thread_id="thread456",
+            summary="Bloomberg Markets",
+            email_type=EmailType.NEWSLETTER,
+        )
+
+        restored = AnalysisResult.from_dict(original.to_dict())
+        assert restored.email_type == EmailType.NEWSLETTER
 
 
 class TestLLMExceptions:
@@ -415,6 +507,7 @@ class TestEmailAnalyzer:
         return json.dumps(
             {
                 "summary": "Request to review proposal by Friday",
+                "email_type": "personal",
                 "requires_response": True,
                 "tasks": [
                     {
@@ -602,6 +695,53 @@ class TestEmailAnalyzer:
         analyzer = EmailAnalyzer(adapter=mock_adapter)
         assert analyzer.adapter is mock_adapter
 
+    def test_analyze_newsletter_email(self, sample_email, mock_adapter):
+        """Test that newsletter emails are classified correctly."""
+        response = json.dumps(
+            {
+                "summary": "Bloomberg daily market summary and analysis",
+                "email_type": "newsletter",
+                "requires_response": False,
+                "tasks": [],
+            }
+        )
+        mock_adapter.complete.return_value = response
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.NEWSLETTER
+        assert result.email_type.is_actionable is False
+        assert len(result.tasks) == 0
+
+    def test_analyze_marketing_email(self, sample_email, mock_adapter):
+        """Test that marketing emails are classified correctly."""
+        response = json.dumps(
+            {
+                "summary": "50% off sale announcement",
+                "email_type": "marketing",
+                "requires_response": False,
+                "tasks": [],
+            }
+        )
+        mock_adapter.complete.return_value = response
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.MARKETING
+        assert result.email_type.is_actionable is False
+
+    def test_analyze_personal_email_type(self, sample_email, mock_adapter, valid_llm_response):
+        """Test that personal emails are classified correctly."""
+        mock_adapter.complete.return_value = valid_llm_response
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.PERSONAL
+        assert result.email_type.is_actionable is True
+
 
 class TestResponseParsing:
     """Tests for JSON response parsing edge cases."""
@@ -717,6 +857,39 @@ class TestResponseParsing:
         result = analyzer.analyze(sample_email)
 
         assert len(result.tasks) == 0
+
+    def test_missing_email_type_defaults_to_personal(self, sample_email, mock_adapter):
+        """Test that missing email_type defaults to personal."""
+        mock_adapter.complete.return_value = json.dumps(
+            {"summary": "Test", "tasks": []}
+        )
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.PERSONAL
+
+    def test_invalid_email_type_defaults_to_personal(self, sample_email, mock_adapter):
+        """Test that unrecognized email_type defaults to personal."""
+        mock_adapter.complete.return_value = json.dumps(
+            {"summary": "Test", "email_type": "unknown", "tasks": []}
+        )
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.PERSONAL
+
+    def test_newsletter_email_type_parsed(self, sample_email, mock_adapter):
+        """Test that newsletter email_type is parsed correctly."""
+        mock_adapter.complete.return_value = json.dumps(
+            {"summary": "Daily digest", "email_type": "newsletter", "tasks": []}
+        )
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.NEWSLETTER
 
     def test_stores_raw_response(self, sample_email, mock_adapter):
         """Test that raw response is stored for debugging."""
