@@ -4,12 +4,13 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import Resource, build
 
-from .exceptions import NonInteractiveAuthError, ScopeMismatchError
+from .exceptions import AuthenticationError, NonInteractiveAuthError, ScopeMismatchError
 
 # Default Gmail API scopes
 DEFAULT_SCOPES = [
@@ -120,8 +121,17 @@ class GmailAuthenticator:
         # Refresh or create new credentials
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+                try:
+                    creds.refresh(Request())
+                except RefreshError as e:
+                    if not self._interactive:
+                        raise AuthenticationError(
+                            f"Token refresh failed: {e}. "
+                            "Re-authenticate locally and update the stored token."
+                        ) from e
+                    # In interactive mode, fall through to re-auth
+                    creds = None
+            if not creds or not creds.valid:
                 # Need to run OAuth flow
                 if not self._interactive:
                     reason = "No valid token exists" if not creds else "Token expired without refresh token"
