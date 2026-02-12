@@ -31,6 +31,11 @@ def main() -> int:
         help="Check Sent Mail for replies and complete matching tasks",
     )
     parser.add_argument(
+        "--process-comments",
+        action="store_true",
+        help="Scan task notes for @commands and execute them",
+    )
+    parser.add_argument(
         "--send-digest",
         metavar="EMAIL",
         help="Generate and send a daily digest to the given email address",
@@ -51,6 +56,8 @@ def main() -> int:
     orchestrator = EmailAgentOrchestrator(max_emails=args.max_emails)
     if args.check_completions:
         result = orchestrator.run_completion_check()
+    elif args.process_comments:
+        result = orchestrator.run_comment_processing()
     else:
         result = orchestrator.run()
 

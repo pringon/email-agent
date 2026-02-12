@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.analyzer import AnalysisResult, ExtractedTask, Priority
+from src.comments import ProcessingResult
 from src.fetcher import Email
 from src.orchestrator import EmailAgentOrchestrator, PipelineResult, StepResult
 from src.completion import CompletionResult
@@ -327,6 +328,13 @@ class TestEmailAgentOrchestrator:
             checker = orchestrator._get_completion_checker()
             mock_checker_cls.assert_called_once()
 
+        with patch(
+            "src.orchestrator.pipeline.CommentInterpreter"
+        ) as mock_interpreter_cls:
+            mock_interpreter_cls.return_value = MagicMock()
+            interpreter = orchestrator._get_comment_interpreter()
+            mock_interpreter_cls.assert_called_once()
+
 
 class TestCompletionCheck:
     def test_completion_check_success(self):
@@ -394,6 +402,74 @@ class TestCompletionCheck:
         assert "errors" in result.steps[0].details
 
 
+class TestCommentProcessing:
+    def test_comment_processing_success(self):
+        processing_result = ProcessingResult(
+            tasks_scanned=5,
+            commands_found=3,
+            commands_executed=3,
+        )
+
+        interpreter = MagicMock()
+        interpreter.process_pending_tasks.return_value = processing_result
+
+        orchestrator = EmailAgentOrchestrator(comment_interpreter=interpreter)
+        result = orchestrator.run_comment_processing()
+
+        assert result.success is True
+        assert len(result.steps) == 1
+        assert result.steps[0].name == "process_comments"
+        assert result.steps[0].details["tasks_scanned"] == 5
+        assert result.steps[0].details["commands_found"] == 3
+        assert result.steps[0].details["commands_executed"] == 3
+        assert result.finished_at is not None
+
+    def test_comment_processing_no_commands(self):
+        interpreter = MagicMock()
+        interpreter.process_pending_tasks.return_value = ProcessingResult(
+            tasks_scanned=3,
+        )
+
+        orchestrator = EmailAgentOrchestrator(comment_interpreter=interpreter)
+        result = orchestrator.run_comment_processing()
+
+        assert result.success is True
+        assert result.steps[0].details["tasks_scanned"] == 3
+        assert result.steps[0].details["commands_found"] == 0
+        assert result.steps[0].details["commands_executed"] == 0
+
+    def test_comment_processing_failure_captured(self):
+        interpreter = MagicMock()
+        interpreter.process_pending_tasks.side_effect = RuntimeError(
+            "Tasks API unavailable"
+        )
+
+        orchestrator = EmailAgentOrchestrator(comment_interpreter=interpreter)
+        result = orchestrator.run_comment_processing()
+
+        assert result.success is False
+        assert result.steps[0].success is False
+        assert "Tasks API unavailable" in result.steps[0].error
+
+    def test_comment_processing_with_errors_in_result(self):
+        processing_result = ProcessingResult(
+            tasks_scanned=4,
+            commands_found=2,
+            commands_executed=1,
+            errors=["Error processing task 'Buy milk' (t1): API error"],
+        )
+
+        interpreter = MagicMock()
+        interpreter.process_pending_tasks.return_value = processing_result
+
+        orchestrator = EmailAgentOrchestrator(comment_interpreter=interpreter)
+        result = orchestrator.run_comment_processing()
+
+        assert result.success is True
+        assert result.steps[0].details["commands_executed"] == 1
+        assert "errors" in result.steps[0].details
+
+
 class TestRunAgentCLI:
     def test_main_returns_zero_on_success(self):
         with patch("run_agent.EmailAgentOrchestrator") as mock_cls:
@@ -448,4 +524,21 @@ class TestRunAgentCLI:
                 assert main() == 0
 
             mock_cls.return_value.run_completion_check.assert_called_once()
+            mock_cls.return_value.run.assert_not_called()
+
+    def test_process_comments_flag(self):
+        with patch("run_agent.EmailAgentOrchestrator") as mock_cls:
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.steps = []
+            mock_cls.return_value.run_comment_processing.return_value = mock_result
+
+            from run_agent import main
+
+            with patch(
+                "sys.argv", ["run_agent.py", "--process-comments"]
+            ):
+                assert main() == 0
+
+            mock_cls.return_value.run_comment_processing.assert_called_once()
             mock_cls.return_value.run.assert_not_called()
