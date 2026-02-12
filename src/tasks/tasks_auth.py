@@ -1,5 +1,6 @@
 """Google Tasks API authentication helper."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -11,6 +12,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import Resource, build
 
 from .exceptions import TasksAuthError
+
+logger = logging.getLogger(__name__)
 
 # Default Google Tasks API scope
 DEFAULT_SCOPES = [
@@ -109,6 +112,7 @@ class TasksAuthenticator:
 
             # Validate scopes match what we need
             if creds and not self._validate_token_scopes(creds):
+                logger.warning("Tasks token scope mismatch, re-authenticating")
                 if not self._interactive:
                     required = self._scopes
                     token_scopes = list(creds.scopes) if creds.scopes else []
@@ -123,6 +127,7 @@ class TasksAuthenticator:
         # Refresh or create new credentials
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
+                logger.debug("Refreshing expired Tasks token")
                 try:
                     creds.refresh(Request())
                 except RefreshError as e:
@@ -148,6 +153,7 @@ class TasksAuthenticator:
                         f"Credentials file not found at {self._credentials_path}. "
                         "Please download OAuth credentials from Google Cloud Console."
                     )
+                logger.info("Starting new Tasks OAuth flow")
                 flow = InstalledAppFlow.from_client_secrets_file(
                     str(self._credentials_path), self._scopes
                 )
@@ -171,6 +177,7 @@ class TasksAuthenticator:
         if self._service is None:
             self._credentials = self._load_or_refresh_credentials()
             self._service = build("tasks", "v1", credentials=self._credentials)
+            logger.debug("Tasks API service created")
         return self._service
 
     @property

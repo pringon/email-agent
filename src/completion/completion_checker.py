@@ -1,5 +1,6 @@
 """CompletionChecker for detecting task completion via Sent Mail."""
 
+import logging
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Iterator, Optional
@@ -14,6 +15,8 @@ from src.tasks import TaskManager
 from .exceptions import SentMailAccessError
 from .models import CompletionResult, SentEmail
 from .reply_resolver import ReplyResolver
+
+logger = logging.getLogger(__name__)
 
 
 class CompletionChecker:
@@ -159,6 +162,7 @@ class CompletionChecker:
             )
 
             messages = results.get("messages", [])
+            logger.debug("Found %d sent messages since %s", len(messages), since.isoformat())
 
             for msg_ref in messages:
                 # Fetch message with metadata (headers only, not full body)
@@ -225,6 +229,7 @@ class CompletionChecker:
             if task.source_thread_id:
                 thread_ids.add(task.source_thread_id)
 
+        logger.debug("Found %d threads with open tasks", len(thread_ids))
         return thread_ids
 
     def check_for_completions(
@@ -255,6 +260,7 @@ class CompletionChecker:
         result = CompletionResult()
         task_manager = self._get_task_manager()
         reply_resolver = self._get_reply_resolver()
+        logger.info("Starting completion check")
 
         # Get threads that have open tasks
         try:
@@ -264,7 +270,7 @@ class CompletionChecker:
             return result
 
         if not threads_with_tasks:
-            # No open tasks, nothing to check
+            logger.debug("No open tasks found, skipping sent mail scan")
             return result
 
         # Track which threads we've already processed
@@ -281,6 +287,7 @@ class CompletionChecker:
 
                 # Check if this thread has tasks
                 if sent_email.thread_id in threads_with_tasks:
+                    logger.info("Thread %s has reply, resolving tasks", sent_email.thread_id)
                     try:
                         open_tasks = task_manager.find_tasks_by_thread_id(
                             sent_email.thread_id, include_completed=False
@@ -298,6 +305,7 @@ class CompletionChecker:
                                 sent_email.thread_id, resolved_ids
                             )
                     except Exception as e:
+                        logger.error("Failed to resolve tasks for thread %s: %s", sent_email.thread_id, e)
                         result.add_error(
                             f"Failed to resolve tasks for thread "
                             f"{sent_email.thread_id}: {e}"
@@ -306,6 +314,7 @@ class CompletionChecker:
                 processed_threads.add(sent_email.thread_id)
 
         except SentMailAccessError as e:
+            logger.error("Failed to access sent mail: %s", e)
             result.add_error(str(e))
 
         return result

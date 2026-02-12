@@ -1,24 +1,25 @@
 """CLI entry point for the email agent pipeline."""
 
 import argparse
-import logging
 import sys
 
 from dotenv import load_dotenv
 
 from src.digest import DigestReporter
+from src.logging_config import configure_logging
 from src.orchestrator import EmailAgentOrchestrator
 
 
 def main() -> int:
     load_dotenv()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-
     parser = argparse.ArgumentParser(description="Run the email agent pipeline")
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default=None,
+        help="Set logging level (overrides LOG_LEVEL env var)",
+    )
     parser.add_argument(
         "--max-emails",
         type=int,
@@ -41,6 +42,7 @@ def main() -> int:
         help="Generate and send a daily digest to the given email address",
     )
     args = parser.parse_args()
+    configure_logging(level_override=args.log_level)
 
     if args.send_digest:
 

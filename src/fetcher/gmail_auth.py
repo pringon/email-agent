@@ -1,5 +1,6 @@
 """Gmail API authentication helper."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -11,6 +12,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import Resource, build
 
 from .exceptions import AuthenticationError, NonInteractiveAuthError, ScopeMismatchError
+
+logger = logging.getLogger(__name__)
 
 # Default Gmail API scopes
 DEFAULT_SCOPES = [
@@ -109,6 +112,7 @@ class GmailAuthenticator:
 
             # Validate scopes match what we need
             if creds and not self._validate_token_scopes(creds):
+                logger.warning("Gmail token scope mismatch, re-authenticating")
                 if not self._interactive:
                     raise ScopeMismatchError(
                         required_scopes=self._scopes,
@@ -121,6 +125,7 @@ class GmailAuthenticator:
         # Refresh or create new credentials
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
+                logger.debug("Refreshing expired Gmail token")
                 try:
                     creds.refresh(Request())
                 except RefreshError as e:
@@ -142,6 +147,7 @@ class GmailAuthenticator:
                         f"Credentials file not found at {self._credentials_path}. "
                         "Please download OAuth credentials from Google Cloud Console."
                     )
+                logger.info("Starting new Gmail OAuth flow")
                 flow = InstalledAppFlow.from_client_secrets_file(
                     str(self._credentials_path), self._scopes
                 )
@@ -165,6 +171,7 @@ class GmailAuthenticator:
         if self._service is None:
             self._credentials = self._load_or_refresh_credentials()
             self._service = build("gmail", "v1", credentials=self._credentials)
+            logger.debug("Gmail API service created")
         return self._service
 
     @property

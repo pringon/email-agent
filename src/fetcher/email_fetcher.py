@@ -1,5 +1,6 @@
 """Main EmailFetcher class for fetching emails from Gmail API."""
 
+import logging
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from typing import Iterator, Optional
@@ -10,6 +11,8 @@ from .body_parser import extract_body, extract_email_address
 from .gmail_auth import GmailAuthenticator
 from .models import Email
 from .state import InMemoryStateRepository, StateRepository
+
+logger = logging.getLogger(__name__)
 
 
 class EmailFetcher:
@@ -90,6 +93,7 @@ class EmailFetcher:
             date = parsedate_to_datetime(date_str)
         except (ValueError, TypeError):
             # Fallback to internal timestamp (milliseconds since epoch)
+            logger.debug("Could not parse date header for message %s, using internalDate", message.get("id"))
             internal_date = message.get("internalDate", "0")
             date = datetime.fromtimestamp(int(internal_date) / 1000)
 
@@ -141,9 +145,11 @@ class EmailFetcher:
         )
 
         messages = results.get("messages", [])
+        logger.info("Found %d unread messages in inbox", len(messages))
 
         for msg_ref in messages:
             # Fetch full message details
+            logger.debug("Fetching message %s", msg_ref["id"])
             message = (
                 service.users()
                 .messages()

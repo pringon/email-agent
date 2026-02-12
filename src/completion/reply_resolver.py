@@ -181,6 +181,7 @@ class ReplyResolver:
 
         adapter = self._get_adapter()
         messages = self._build_messages(reply_body, subject, tasks)
+        logger.info("Resolving reply against %d tasks", len(tasks))
 
         last_error: Optional[LLMResponseError] = None
         for attempt in range(self._max_retries + 1):
@@ -190,10 +191,16 @@ class ReplyResolver:
                     temperature=self._temperature,
                     json_mode=True,
                 )
-                return self._parse_response(response, tasks)
+                resolved = self._parse_response(response, tasks)
+                logger.debug("Reply resolved %d of %d tasks", len(resolved), len(tasks))
+                return resolved
             except LLMResponseError as e:
                 last_error = e
                 if attempt < self._max_retries:
+                    logger.warning(
+                        "Retrying reply resolution (attempt %d/%d): %s",
+                        attempt + 1, self._max_retries + 1, e,
+                    )
                     continue
                 raise
 
