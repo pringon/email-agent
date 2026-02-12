@@ -23,7 +23,11 @@ from src.completion import CompletionChecker
 from src.tasks import TaskManager
 from src.tasks.models import TaskStatus
 
-from tests.completion_test_helpers import create_test_task, fetch_thread_id_from_sent_mail
+from tests.completion_test_helpers import (
+    create_test_task,
+    fetch_thread_id_from_sent_mail,
+    wait_for_task_in_list,
+)
 
 
 @pytest.mark.integration
@@ -36,9 +40,13 @@ class TestCompletionCheckerE2E:
         return TaskManager()
 
     @pytest.fixture(scope="class")
-    def checker(self):
-        """Create a CompletionChecker with real credentials."""
-        return CompletionChecker()
+    def checker(self, task_manager):
+        """Create a CompletionChecker with real credentials.
+
+        Shares the task_manager fixture so that get_thread_ids_with_tasks()
+        queries the same API session that created the test tasks.
+        """
+        return CompletionChecker(task_manager=task_manager)
 
     def test_fetch_sent_emails(self, checker):
         """Verify we can fetch sent emails from Gmail."""
@@ -110,6 +118,9 @@ class TestCompletionCheckerE2E:
                 f"Task thread_id mismatch: {fetched.source_thread_id} != {thread_id}"
             )
             assert fetched.status == TaskStatus.NEEDS_ACTION
+
+            # Wait for the task to be visible in list_tasks (API propagation)
+            wait_for_task_in_list(task_manager, thread_id)
 
             # Step 3: Run CompletionChecker
             result = checker.check_for_completions(since=since, max_results=10)
