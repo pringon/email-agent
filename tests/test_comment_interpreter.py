@@ -8,6 +8,12 @@ from unittest.mock import MagicMock, call
 import pytest
 from googleapiclient.errors import HttpError
 
+from src.analyzer.adapter import LLMAdapter
+from src.analyzer.exceptions import (
+    LLMAuthenticationError,
+    LLMConnectionError,
+    LLMResponseError,
+)
 from src.comments import (
     CommandResult,
     CommandType,
@@ -846,12 +852,13 @@ class TestProcessPendingTasks:
 # ==================== Gmail Helpers ====================
 
 
-def _make_gmail_headers_response(
+def _make_gmail_full_response(
     from_addr="sender@example.com",
     subject="Original Subject",
     message_id="<orig@msg.id>",
+    body_text="Hi, could you review the Q1 report and send feedback by Friday?",
 ):
-    """Build a mock Gmail API metadata response."""
+    """Build a mock Gmail API full-format response with headers and body."""
     headers = []
     if from_addr:
         headers.append({"name": "From", "value": from_addr})
@@ -859,7 +866,15 @@ def _make_gmail_headers_response(
         headers.append({"name": "Subject", "value": subject})
     if message_id:
         headers.append({"name": "Message-ID", "value": message_id})
-    return {"payload": {"headers": headers}}
+
+    payload = {"headers": headers, "mimeType": "text/plain"}
+    if body_text:
+        encoded = base64.urlsafe_b64encode(body_text.encode()).decode()
+        payload["body"] = {"data": encoded}
+    else:
+        payload["body"] = {"data": ""}
+
+    return {"payload": payload}
 
 
 def _make_task(
@@ -898,7 +913,7 @@ class TestExecuteRespond:
         """Create a mock Gmail API service with default successful responses."""
         service = MagicMock()
         service.users().messages().get().execute.return_value = (
-            _make_gmail_headers_response()
+            _make_gmail_full_response()
         )
         service.users().messages().send().execute.return_value = {
             "id": "sent_msg_id"
@@ -910,10 +925,21 @@ class TestExecuteRespond:
         return MagicMock()
 
     @pytest.fixture
-    def interpreter(self, mock_gmail_service, mock_task_manager):
+    def mock_llm_adapter(self):
+        """Create a mock LLM adapter that returns a polished reply."""
+        adapter = MagicMock(spec=LLMAdapter)
+        adapter.complete.return_value = (
+            "Thank you for sending over the Q1 report. "
+            "I'll review it and provide my feedback by Friday."
+        )
+        return adapter
+
+    @pytest.fixture
+    def interpreter(self, mock_gmail_service, mock_task_manager, mock_llm_adapter):
         return CommentInterpreter(
             task_manager=mock_task_manager,
             gmail_service=mock_gmail_service,
+            llm_adapter=mock_llm_adapter,
         )
 
     @pytest.fixture
@@ -965,7 +991,7 @@ class TestExecuteRespond:
     ):
         """Re: prefix is not doubled when already present."""
         mock_gmail_service.users().messages().get().execute.return_value = (
-            _make_gmail_headers_response(subject="Re: Already prefixed")
+            _make_gmail_full_response(subject="Re: Already prefixed")
         )
         interpreter._execute_respond(task, respond_command)
         msg = _decode_sent_message(mock_gmail_service)
@@ -989,13 +1015,13 @@ class TestExecuteRespond:
         body = send_call.call_args[1]["body"]
         assert body["threadId"] == "thread123"
 
-    def test_respond_message_body(
-        self, interpreter, task, respond_command, mock_gmail_service
+    def test_respond_message_body_is_llm_generated(
+        self, interpreter, task, respond_command, mock_gmail_service, mock_llm_adapter
     ):
-        """Reply body matches the command argument."""
+        """Reply body is the LLM-generated text, not the raw user input."""
         interpreter._execute_respond(task, respond_command)
         msg = _decode_sent_message(mock_gmail_service)
-        assert msg.get_payload() == "Thanks, I'll handle this"
+        assert msg.get_payload() == mock_llm_adapter.complete.return_value
 
     # --- Graceful degradation ---
 
@@ -1004,7 +1030,7 @@ class TestExecuteRespond:
     ):
         """Missing Message-ID sends reply without In-Reply-To/References."""
         mock_gmail_service.users().messages().get().execute.return_value = (
-            _make_gmail_headers_response(message_id="")
+            _make_gmail_full_response(message_id="")
         )
         interpreter._execute_respond(task, respond_command)
         msg = _decode_sent_message(mock_gmail_service)
@@ -1050,7 +1076,7 @@ class TestExecuteRespond:
     ):
         """Missing From header raises CommentExecutionError."""
         mock_gmail_service.users().messages().get().execute.return_value = (
-            _make_gmail_headers_response(from_addr="")
+            _make_gmail_full_response(from_addr="")
         )
         with pytest.raises(CommentExecutionError, match="Could not determine recipient"):
             interpreter._execute_respond(task, respond_command)
@@ -1076,6 +1102,73 @@ class TestExecuteRespond:
             interpreter._execute_respond(task, respond_command)
         assert task.status == TaskStatus.NEEDS_ACTION
 
+    # --- LLM reply generation ---
+
+    def test_respond_calls_llm_with_original_email_context(
+        self, interpreter, task, respond_command, mock_llm_adapter
+    ):
+        """LLM adapter is called with user message and original email context."""
+        interpreter._execute_respond(task, respond_command)
+        mock_llm_adapter.complete.assert_called_once()
+        call_kwargs = mock_llm_adapter.complete.call_args
+        messages = call_kwargs[1]["messages"] if "messages" in call_kwargs[1] else call_kwargs[0][0]
+        # User prompt should contain the original email info and user's instructions
+        user_msg = messages[-1].content
+        assert "Original Subject" in user_msg
+        assert "sender@example.com" in user_msg
+        assert "Thanks, I'll handle this" in user_msg
+
+    def test_respond_llm_receives_original_body(
+        self, interpreter, task, respond_command, mock_llm_adapter
+    ):
+        """LLM prompt includes the original email body text."""
+        interpreter._execute_respond(task, respond_command)
+        call_kwargs = mock_llm_adapter.complete.call_args
+        messages = call_kwargs[1]["messages"] if "messages" in call_kwargs[1] else call_kwargs[0][0]
+        user_msg = messages[-1].content
+        assert "Q1 report" in user_msg
+
+    def test_respond_llm_failure_raises_error(
+        self, interpreter, task, respond_command, mock_llm_adapter
+    ):
+        """LLM connection error is wrapped in CommentExecutionError."""
+        mock_llm_adapter.complete.side_effect = LLMConnectionError("Connection refused")
+        with pytest.raises(CommentExecutionError, match="Failed to generate reply"):
+            interpreter._execute_respond(task, respond_command)
+        assert task.status == TaskStatus.NEEDS_ACTION
+
+    def test_respond_llm_auth_error_raises(
+        self, interpreter, task, respond_command, mock_llm_adapter
+    ):
+        """LLM authentication error is wrapped in CommentExecutionError."""
+        mock_llm_adapter.complete.side_effect = LLMAuthenticationError("Invalid key")
+        with pytest.raises(CommentExecutionError, match="Failed to generate reply"):
+            interpreter._execute_respond(task, respond_command)
+
+    def test_respond_llm_response_error_retries(
+        self, interpreter, task, respond_command, mock_llm_adapter
+    ):
+        """LLMResponseError triggers retries before failing."""
+        mock_llm_adapter.complete.side_effect = LLMResponseError("Bad JSON")
+        with pytest.raises(CommentExecutionError, match="Failed to generate reply"):
+            interpreter._execute_respond(task, respond_command)
+        # Should have retried (MAX_LLM_RETRIES + 1 total attempts = 3)
+        assert mock_llm_adapter.complete.call_count == 3
+
+    def test_respond_llm_response_error_succeeds_on_retry(
+        self, interpreter, task, respond_command, mock_llm_adapter, mock_gmail_service
+    ):
+        """LLMResponseError on first attempt, success on second."""
+        mock_llm_adapter.complete.side_effect = [
+            LLMResponseError("Bad response"),
+            "Thanks for the report, I'll review it.",
+        ]
+        action = interpreter._execute_respond(task, respond_command)
+        assert "sender@example.com" in action
+        assert mock_llm_adapter.complete.call_count == 2
+        msg = _decode_sent_message(mock_gmail_service)
+        assert msg.get_payload() == "Thanks for the report, I'll review it."
+
 
 # ==================== @respond Integration via _process_task ====================
 
@@ -1087,7 +1180,7 @@ class TestProcessTaskRespond:
     def mock_gmail_service(self):
         service = MagicMock()
         service.users().messages().get().execute.return_value = (
-            _make_gmail_headers_response()
+            _make_gmail_full_response()
         )
         service.users().messages().send().execute.return_value = {"id": "sent_id"}
         return service
@@ -1097,10 +1190,17 @@ class TestProcessTaskRespond:
         return MagicMock()
 
     @pytest.fixture
-    def interpreter(self, mock_gmail_service, mock_task_manager):
+    def mock_llm_adapter(self):
+        adapter = MagicMock(spec=LLMAdapter)
+        adapter.complete.return_value = "Sure, I'll take care of that."
+        return adapter
+
+    @pytest.fixture
+    def interpreter(self, mock_gmail_service, mock_task_manager, mock_llm_adapter):
         return CommentInterpreter(
             task_manager=mock_task_manager,
             gmail_service=mock_gmail_service,
+            llm_adapter=mock_llm_adapter,
         )
 
     def test_process_task_respond_calls_update(
@@ -1136,3 +1236,14 @@ class TestProcessTaskRespond:
         assert len(results) == 1
         assert not results[0].success
         assert "Failed to send reply" in results[0].error
+
+    def test_process_task_respond_llm_failure_recorded(
+        self, interpreter, mock_llm_adapter, mock_task_manager
+    ):
+        """LLM failure during @respond is recorded as a failed CommandResult."""
+        mock_llm_adapter.complete.side_effect = LLMConnectionError("Timeout")
+        task = _make_task(notes="@respond Will do")
+        results = interpreter._process_task(task)
+        assert len(results) == 1
+        assert not results[0].success
+        assert "Failed to generate reply" in results[0].error
