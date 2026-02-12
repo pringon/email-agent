@@ -466,6 +466,106 @@ class TestOpenAIAdapter:
                 adapter.complete([Message(MessageRole.USER, "Hello")])
             assert "No choices" in str(exc_info.value)
 
+    def test_complete_none_content_raises(self):
+        """Test that None content in response raises LLMResponseError."""
+        adapter = OpenAIAdapter(api_key="test-key")
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content=None))]
+
+        with patch.object(adapter, "_get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(LLMResponseError, match="Empty content"):
+                adapter.complete([Message(MessageRole.USER, "Hello")])
+
+    def test_complete_authentication_error_wraps(self):
+        """Test that openai.AuthenticationError wraps to LLMAuthenticationError."""
+        from openai import AuthenticationError
+
+        adapter = OpenAIAdapter(api_key="test-key")
+
+        with patch.object(adapter, "_get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.status_code = 401
+            mock_response.json.return_value = {"error": {"message": "Invalid API key"}}
+            mock_client.chat.completions.create.side_effect = AuthenticationError(
+                "Invalid API key",
+                response=mock_response,
+                body={"error": {"message": "Invalid API key"}},
+            )
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(LLMAuthenticationError, match="authentication failed"):
+                adapter.complete([Message(MessageRole.USER, "Hello")])
+
+    def test_complete_rate_limit_error_wraps(self):
+        """Test that openai.RateLimitError wraps to LLMRateLimitError."""
+        from openai import RateLimitError
+
+        adapter = OpenAIAdapter(api_key="test-key")
+
+        with patch.object(adapter, "_get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.status_code = 429
+            mock_response.headers = {"retry-after": "30"}
+            mock_response.json.return_value = {
+                "error": {"message": "Rate limit exceeded"}
+            }
+            mock_client.chat.completions.create.side_effect = RateLimitError(
+                "Rate limit exceeded",
+                response=mock_response,
+                body={"error": {"message": "Rate limit exceeded"}},
+            )
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(LLMRateLimitError) as exc_info:
+                adapter.complete([Message(MessageRole.USER, "Hello")])
+            assert exc_info.value.retry_after == 30.0
+
+    def test_complete_api_connection_error_wraps(self):
+        """Test that openai.APIConnectionError wraps to LLMConnectionError."""
+        from openai import APIConnectionError
+
+        adapter = OpenAIAdapter(api_key="test-key")
+
+        with patch.object(adapter, "_get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.side_effect = APIConnectionError(
+                request=MagicMock()
+            )
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(LLMConnectionError, match="Failed to connect"):
+                adapter.complete([Message(MessageRole.USER, "Hello")])
+
+    def test_complete_api_error_wraps(self):
+        """Test that openai.APIError wraps to LLMResponseError."""
+        from openai import APIError
+
+        adapter = OpenAIAdapter(api_key="test-key")
+
+        with patch.object(adapter, "_get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.status_code = 500
+            mock_response.json.return_value = {
+                "error": {"message": "Internal server error"}
+            }
+            mock_client.chat.completions.create.side_effect = APIError(
+                "Internal server error",
+                request=MagicMock(),
+                body={"error": {"message": "Internal server error"}},
+            )
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(LLMResponseError, match="API error"):
+                adapter.complete([Message(MessageRole.USER, "Hello")])
+
     def test_lazy_client_init(self):
         """Test that client is lazily initialized."""
         adapter = OpenAIAdapter(api_key="test-key")
@@ -965,6 +1065,30 @@ class TestResponseParsing:
         result = analyzer.analyze(sample_email)
 
         assert result.email_type == EmailType.NEWSLETTER
+
+    def test_malformed_task_logs_warning(self, sample_email, mock_adapter, caplog):
+        """Test that skipping a malformed task logs a warning."""
+        import logging
+
+        mock_adapter.complete.return_value = json.dumps(
+            {
+                "summary": "Test",
+                "tasks": [
+                    {
+                        "description": "Missing title field",
+                        "priority": "high",
+                    }
+                ],
+            }
+        )
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        with caplog.at_level(logging.WARNING, logger="src.analyzer.email_analyzer"):
+            result = analyzer.analyze(sample_email)
+
+        assert len(result.tasks) == 0
+        assert "Skipping malformed task" in caplog.text
+        assert "msg123" in caplog.text
 
     def test_stores_raw_response(self, sample_email, mock_adapter):
         """Test that raw response is stored for debugging."""

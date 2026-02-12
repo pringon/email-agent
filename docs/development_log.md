@@ -634,3 +634,61 @@ Actionability is now orthogonal to email type. Any email type can be actionable 
 ```
 390 passed, 31 deselected in 0.87s
 ```
+
+---
+
+## Session 10 — T12: Final Testing and QA Pass
+
+### Goal
+
+Complete T12: Final testing and QA pass before documentation finalization.
+
+### What We Did
+
+**1. Audited Test Coverage Across All Modules**
+
+Systematic review of all source modules against their test files:
+- Identified 3 gaps: OpenAIAdapter error wrapping untested, `--send-digest` CLI path untested, malformed task skipping unlogged
+
+**2. Added OpenAIAdapter Error Wrapping Tests**
+
+Added 6 tests to `TestOpenAIAdapter` in `test_email_analyzer.py`:
+- `test_complete_none_content_raises` — None response content raises LLMResponseError
+- `test_complete_authentication_error_wraps` — openai.AuthenticationError → LLMAuthenticationError
+- `test_complete_rate_limit_error_wraps` — openai.RateLimitError → LLMRateLimitError (with retry_after)
+- `test_complete_api_connection_error_wraps` — openai.APIConnectionError → LLMConnectionError
+- `test_complete_api_error_wraps` — openai.APIError → LLMResponseError
+
+These test the error mapping at `src/analyzer/openai_adapter.py:118-132` which was previously untested.
+
+**3. Added `--send-digest` CLI Tests**
+
+Added 2 tests to `TestRunAgentCLI` in `test_orchestrator.py`:
+- `test_send_digest_flag` — Success path returns 0
+- `test_send_digest_flag_with_errors` — Error path returns 1
+
+**4. Added Logging for Silently-Skipped Malformed Tasks**
+
+In `src/analyzer/email_analyzer.py`, added `logging` import and `logger.warning()` call in `_parse_response()` when a malformed task is skipped. Previously the `except (KeyError, ValueError): continue` block silently dropped data. Now consistent with `ReplyResolver._parse_response()` which already logs this pattern.
+
+Added corresponding `test_malformed_task_logs_warning` test using `caplog` fixture.
+
+**5. Updated Spec**
+
+- Fixed stale CommentInterpreter description (was "Status: planned, not yet implemented")
+- Marked T12 as complete with progress note
+
+### Current Status
+
+- **Completed:** T12 (Final testing and QA pass)
+- **Next Up:** T13 (Revise and finalize documentation)
+
+### Decisions Made
+
+- Kept scope tight: only fixed issues with observable impact (silent data dropping, untested error paths)
+- Did not add EmailFetcher HttpError wrapping — orchestrator already catches it, adding a new exception class is beyond QA scope
+- Did not add logging to all modules — only fixed the one with actual silent data loss
+
+### Test Results
+
+All unit tests passing with 8 new tests added.

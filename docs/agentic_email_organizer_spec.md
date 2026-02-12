@@ -97,9 +97,9 @@ Each orchestrator run executes these steps with per-step error isolation:
 - If the LLM resolution fails for a thread, no tasks are completed (safe default) and the error is recorded.
 
 ### 5. `CommentInterpreter` (`src/comments/`)
-- Parses user comments in task notes or terminal flags.
-- Executes relevant action or updates task metadata.
-- Status: planned, not yet implemented.
+- Parses user `@commands` embedded in Google Tasks notes and executes the corresponding actions.
+- Supports six commands: `@priority`, `@due`, `@snooze`, `@ignore`, `@delete`, `@note`.
+- Batch processing via `process_pending_tasks()` scans all open tasks for pending commands.
 
 ### 6. `DigestReporter` (`src/digest/`)
 - Generates daily summaries with task categorization by due date and status.
@@ -149,7 +149,7 @@ Each orchestrator run executes these steps with per-step error isolation:
 | T10     | Implement comment parser for task instructions        | Medium   | T06                 | Agentic Features         | ✅ Complete |
 | T11     | Add scheduler (cron job) to run agent periodically    | High     | T03, T06            | Deployment Ready         | ✅ Complete |
 | T14     | Use LLM to infer which tasks a sent reply resolves    | Medium   | T04, T08            | Task Management          | ✅ Complete |
-| T12     | Final testing and QA pass                             | High     | T01–T11, T14        | Finalization             | ⬚ Pending  |
+| T12     | Final testing and QA pass                             | High     | T01–T11, T14        | Finalization             | ✅ Complete |
 | T13     | Revise and finalize documentation                     | High     | T12                 | Finalization             | ⬚ Pending  |
 | T15     | Implement @respond command for agent email replies    | Medium   | T10                 | Agentic Features         | ⬚ Pending  |
 
@@ -168,6 +168,7 @@ Each orchestrator run executes these steps with per-step error isolation:
 - **T10** (2026-02-11): CommentInterpreter module implemented with @command parsing from task notes, six command types (priority, due, snooze, ignore, delete, note), and batch processing. 80 unit tests passing.
 - **T11** (2026-02-10): Orchestrator pipeline and GitHub Actions cron workflow implemented. Runs agent periodically via run_agent.yml with scheduled dispatch.
 - **T14** (2026-02-11): ReplyResolver module implemented. Uses LLM to analyze sent reply content against open tasks and determine which specific tasks are resolved, replacing blanket thread completion. 29 new unit tests, 285 total passing.
+- **T12** (2026-02-12): Final testing and QA pass. Added missing unit tests for OpenAI adapter error wrapping (5 tests) and CLI --send-digest flag (2 tests). Added logging for silently-skipped malformed tasks in EmailAnalyzer. Updated spec to reflect CommentInterpreter implementation status.
 
 ---
 
