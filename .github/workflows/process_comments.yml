@@ -1,0 +1,28 @@
+name: Process Task Comments
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'    # Every 2 hours
+  workflow_dispatch:            # Manual trigger from GitHub UI
+
+jobs:
+  process-comments:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt
+      - name: Setup credentials
+        run: |
+          mkdir -p config
+          echo "${{ secrets.GMAIL_PROD_CREDENTIALS }}" | base64 -d > config/credentials.json
+          echo "${{ secrets.GMAIL_PROD_TOKEN }}" | base64 -d > config/token.json
+          echo "${{ secrets.GOOGLE_TASKS_PROD_TOKEN }}" | base64 -d > config/tasks_token.json
+      - name: Process comments
+        env:
+          GMAIL_NON_INTERACTIVE: "1"
+          TASKS_NON_INTERACTIVE: "1"
+        run: python run_agent.py --process-comments
