@@ -30,7 +30,7 @@ from .exceptions import (
     LLMRateLimitError,
     LLMResponseError,
 )
-from .models import AnalysisResult, ExtractedTask, Message, MessageRole, Priority
+from .models import AnalysisResult, EmailType, ExtractedTask, Message, MessageRole, Priority
 from .openai_adapter import OpenAIAdapter
 
 __all__ = [
@@ -40,6 +40,7 @@ __all__ = [
     "OpenAIAdapter",
     # Models
     "AnalysisResult",
+    "EmailType",
     "ExtractedTask",
     "Message",
     "MessageRole",

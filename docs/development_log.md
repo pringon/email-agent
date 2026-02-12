@@ -527,3 +527,60 @@ Implement T14: Use LLM to infer which tasks a sent reply resolves, replacing the
 ```
 
 All unit tests passing (29 new reply resolver/completion tests + 256 existing tests).
+
+---
+
+## Session 9 — 2026-02-12
+
+### Goal
+Add LLM-based newsletter detection to prevent task creation from newsletters, marketing emails, and automated notifications (e.g., Bloomberg daily digests).
+
+### What We Did
+
+**1. Updated LLM Prompts for Email Type Classification**
+- Modified the system prompt in `src/analyzer/prompts.py` to classify emails into five types: `personal`, `newsletter`, `marketing`, `automated`, `notification`
+- Added explicit instruction that only personal emails should produce tasks
+- Added `email_type` field to the user prompt JSON response schema
+
+**2. Added EmailType Model**
+- New `EmailType` enum in `src/analyzer/models.py` with `is_actionable` property (only `personal` returns `True`)
+- Added `email_type` field to `AnalysisResult` dataclass (defaults to `personal` for backward compatibility)
+- Updated `to_dict()`/`from_dict()` serialization with graceful fallback for unknown types
+- Exported `EmailType` from `src/analyzer/__init__.py`
+
+**3. Updated EmailAnalyzer Response Parsing**
+- `_parse_response()` in `src/analyzer/email_analyzer.py` now parses the `email_type` field from LLM responses
+- Unknown/missing values default to `personal` (safe default — never accidentally filters real emails)
+
+**4. Updated Pipeline to Filter Non-Actionable Emails**
+- `create_tasks_step()` in `src/orchestrator/pipeline.py` skips task creation for non-actionable email types
+- `analyze_step()` logs each non-actionable email at INFO level with subject and sender
+- Pipeline reports track `newsletters_filtered` and `non_actionable` counts in step details
+- Log output: `"Classified as newsletter: 'Bloomberg Markets' from Bloomberg"`
+
+**5. Comprehensive Tests**
+- 12 new tests across `test_email_analyzer.py` and `test_orchestrator.py`:
+  - `TestEmailType`: enum values, `is_actionable` property, string construction
+  - `TestAnalysisResult`: newsletter serialization, deserialization, roundtrip, missing/invalid type defaults
+  - `TestEmailAnalyzer`: newsletter, marketing, and personal classification tests
+  - `TestResponseParsing`: missing/invalid/valid `email_type` parsing
+  - `TestEmailAgentOrchestrator`: newsletter filtering, mixed personal+newsletter, marketing filtering
+- Updated existing tests for new `email_type` field and `newsletters_filtered` metric
+
+### Key Design Decision: Inference Over Blocklist
+
+Rather than maintaining a list of blocked senders/domains, the LLM infers email type from content signals (bulk formatting, unsubscribe links, editorial tone, sender patterns). This means:
+- No maintenance burden for new newsletter subscriptions
+- Works for any language or sender
+- Adapts to edge cases (e.g., a personal email from someone at Bloomberg vs. a Bloomberg newsletter)
+
+### Current Status
+
+- Newsletter detection is complete and integrated into the pipeline
+- All 389 unit tests passing (12 new + 377 existing)
+
+### Test Results
+
+```
+389 passed, 4 skipped in 5.27s
+```

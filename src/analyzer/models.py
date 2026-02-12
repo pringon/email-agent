@@ -6,6 +6,21 @@ from enum import Enum
 from typing import Any, Optional
 
 
+class EmailType(Enum):
+    """Email type classification for filtering."""
+
+    PERSONAL = "personal"
+    NEWSLETTER = "newsletter"
+    MARKETING = "marketing"
+    AUTOMATED = "automated"
+    NOTIFICATION = "notification"
+
+    @property
+    def is_actionable(self) -> bool:
+        """Whether this email type should produce tasks."""
+        return self == EmailType.PERSONAL
+
+
 class Priority(Enum):
     """Task priority levels."""
 
@@ -106,6 +121,7 @@ class AnalysisResult:
         email_id: Gmail message ID that was analyzed.
         thread_id: Gmail thread ID.
         summary: Brief summary of the email content.
+        email_type: Classification of the email (personal, newsletter, etc.).
         tasks: List of extracted tasks (may be empty).
         requires_response: Whether email needs a reply.
         sender_name: Extracted sender name for context.
@@ -115,6 +131,7 @@ class AnalysisResult:
     email_id: str
     thread_id: str
     summary: str
+    email_type: EmailType = EmailType.PERSONAL
     tasks: list[ExtractedTask] = field(default_factory=list)
     requires_response: bool = False
     sender_name: str = ""
@@ -126,6 +143,7 @@ class AnalysisResult:
             "email_id": self.email_id,
             "thread_id": self.thread_id,
             "summary": self.summary,
+            "email_type": self.email_type.value,
             "tasks": [t.to_dict() for t in self.tasks],
             "requires_response": self.requires_response,
             "sender_name": self.sender_name,
@@ -142,10 +160,17 @@ class AnalysisResult:
         Returns:
             AnalysisResult instance.
         """
+        email_type_str = data.get("email_type", "personal")
+        try:
+            email_type = EmailType(email_type_str)
+        except ValueError:
+            email_type = EmailType.PERSONAL
+
         return cls(
             email_id=data["email_id"],
             thread_id=data["thread_id"],
             summary=data["summary"],
+            email_type=email_type,
             tasks=[ExtractedTask.from_dict(t) for t in data.get("tasks", [])],
             requires_response=data.get("requires_response", False),
             sender_name=data.get("sender_name", ""),

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.analyzer import AnalysisResult, ExtractedTask, Priority
+from src.analyzer import AnalysisResult, EmailType, ExtractedTask, Priority
 from src.comments import ProcessingResult
 from src.fetcher import Email
 from src.orchestrator import EmailAgentOrchestrator, PipelineResult, StepResult
@@ -132,6 +132,7 @@ class TestEmailAgentOrchestrator:
         assert result.steps[2].name == "create_tasks"
         assert result.steps[2].details["tasks_created"] == 1
         assert result.steps[2].details["duplicates_skipped"] == 0
+        assert result.steps[2].details["newsletters_filtered"] == 0
         assert result.finished_at is not None
 
     def test_no_emails_returns_success(self):
@@ -145,6 +146,7 @@ class TestEmailAgentOrchestrator:
         assert result.steps[0].details["emails_fetched"] == 0
         assert result.steps[1].details["emails_analyzed"] == 0
         assert result.steps[2].details["tasks_created"] == 0
+        assert result.steps[2].details["newsletters_filtered"] == 0
 
     def test_fetch_failure_skips_later_steps(self):
         fetcher = MagicMock()
@@ -301,6 +303,110 @@ class TestEmailAgentOrchestrator:
         assert result.steps[1].success is True
         assert result.steps[2].success is False
         assert "API error" in result.steps[2].error
+
+    def test_newsletter_emails_are_filtered(self):
+        """Test that newsletter emails don't produce tasks."""
+        email = _make_email()
+        newsletter_analysis = AnalysisResult(
+            email_id=email.id,
+            thread_id=email.thread_id,
+            summary="Bloomberg daily market roundup",
+            email_type=EmailType.NEWSLETTER,
+            tasks=[],
+            sender_name="Bloomberg",
+        )
+
+        fetcher = MagicMock()
+        fetcher.fetch_unread.return_value = [email]
+
+        analyzer = MagicMock()
+        analyzer.analyze.return_value = newsletter_analysis
+
+        task_manager = MagicMock()
+
+        orchestrator = self._make_orchestrator(fetcher, analyzer, task_manager)
+        result = orchestrator.run()
+
+        assert result.success is True
+        assert result.steps[2].details["newsletters_filtered"] == 1
+        assert result.steps[2].details["tasks_created"] == 0
+        task_manager.create_from_extracted_task.assert_not_called()
+
+    def test_mixed_personal_and_newsletter_emails(self):
+        """Test pipeline with both personal and newsletter emails."""
+        email1 = _make_email(id="msg1", thread_id="t1")
+        email2 = _make_email(id="msg2", thread_id="t2")
+
+        personal_analysis = AnalysisResult(
+            email_id="msg1",
+            thread_id="t1",
+            summary="Please review this document",
+            email_type=EmailType.PERSONAL,
+            tasks=[
+                ExtractedTask(
+                    title="Review document",
+                    description="Review the attached document",
+                    priority=Priority.MEDIUM,
+                    source_email_id="msg1",
+                    source_thread_id="t1",
+                ),
+            ],
+        )
+        newsletter_analysis = AnalysisResult(
+            email_id="msg2",
+            thread_id="t2",
+            summary="Weekly tech newsletter",
+            email_type=EmailType.NEWSLETTER,
+            tasks=[],
+            sender_name="TechDigest",
+        )
+
+        fetcher = MagicMock()
+        fetcher.fetch_unread.return_value = [email1, email2]
+
+        analyzer = MagicMock()
+        analyzer.analyze.side_effect = [personal_analysis, newsletter_analysis]
+
+        task_manager = MagicMock()
+        task_manager.find_tasks_by_email_id.return_value = []
+        task_manager.create_from_extracted_task.return_value = Task(
+            title="Review document", id="task1"
+        )
+
+        orchestrator = self._make_orchestrator(fetcher, analyzer, task_manager)
+        result = orchestrator.run()
+
+        assert result.success is True
+        assert result.steps[2].details["tasks_created"] == 1
+        assert result.steps[2].details["newsletters_filtered"] == 1
+        assert task_manager.create_from_extracted_task.call_count == 1
+
+    def test_marketing_emails_are_filtered(self):
+        """Test that marketing emails are also filtered."""
+        email = _make_email()
+        marketing_analysis = AnalysisResult(
+            email_id=email.id,
+            thread_id=email.thread_id,
+            summary="50% off sale",
+            email_type=EmailType.MARKETING,
+            tasks=[],
+            sender_name="Store",
+        )
+
+        fetcher = MagicMock()
+        fetcher.fetch_unread.return_value = [email]
+
+        analyzer = MagicMock()
+        analyzer.analyze.return_value = marketing_analysis
+
+        task_manager = MagicMock()
+
+        orchestrator = self._make_orchestrator(fetcher, analyzer, task_manager)
+        result = orchestrator.run()
+
+        assert result.success is True
+        assert result.steps[2].details["newsletters_filtered"] == 1
+        assert result.steps[2].details["tasks_created"] == 0
 
     def test_lazy_init_creates_default_instances(self):
         """Test that None parameters trigger lazy initialization."""
