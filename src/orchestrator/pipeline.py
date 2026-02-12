@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from src.analyzer import AnalysisResult, EmailAnalyzer
+from src.comments import CommentInterpreter
 from src.completion import CompletionChecker
 from src.fetcher import Email, EmailFetcher
 from src.tasks import TaskManager
@@ -32,12 +33,14 @@ class EmailAgentOrchestrator:
         analyzer: Optional[EmailAnalyzer] = None,
         task_manager: Optional[TaskManager] = None,
         completion_checker: Optional[CompletionChecker] = None,
+        comment_interpreter: Optional[CommentInterpreter] = None,
         max_emails: int = 50,
     ):
         self._fetcher = fetcher
         self._analyzer = analyzer
         self._task_manager = task_manager
         self._completion_checker = completion_checker
+        self._comment_interpreter = comment_interpreter
         self._max_emails = max_emails
 
     def _get_fetcher(self) -> EmailFetcher:
@@ -59,6 +62,11 @@ class EmailAgentOrchestrator:
         if self._completion_checker is None:
             self._completion_checker = CompletionChecker()
         return self._completion_checker
+
+    def _get_comment_interpreter(self) -> CommentInterpreter:
+        if self._comment_interpreter is None:
+            self._comment_interpreter = CommentInterpreter()
+        return self._comment_interpreter
 
     @staticmethod
     def _skip_step(name: str) -> StepResult:
@@ -230,6 +238,39 @@ class EmailAgentOrchestrator:
 
         result.steps.append(
             self._run_step("check_completions", check_completions_step)
+        )
+
+        result.finished_at = datetime.now(timezone.utc)
+        return result
+
+    def run_comment_processing(self) -> PipelineResult:
+        """Scan tasks for @commands in notes and execute them.
+
+        Returns:
+            PipelineResult with a single process_comments step.
+        """
+        result = PipelineResult(started_at=datetime.now(timezone.utc))
+
+        def process_comments_step() -> dict:
+            interpreter = self._get_comment_interpreter()
+            processing = interpreter.process_pending_tasks()
+            logger.info(
+                "Scanned %d tasks, found %d commands, executed %d",
+                processing.tasks_scanned,
+                processing.commands_found,
+                processing.commands_executed,
+            )
+            details = {
+                "tasks_scanned": processing.tasks_scanned,
+                "commands_found": processing.commands_found,
+                "commands_executed": processing.commands_executed,
+            }
+            if processing.errors:
+                details["errors"] = processing.errors
+            return details
+
+        result.steps.append(
+            self._run_step("process_comments", process_comments_step)
         )
 
         result.finished_at = datetime.now(timezone.utc)
