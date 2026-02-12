@@ -533,6 +533,7 @@ All unit tests passing (29 new reply resolver/completion tests + 256 existing te
 ## Session 9 — 2026-02-12
 
 ### Goal
+<<<<<<< HEAD
 Add LLM-based newsletter detection to prevent task creation from newsletters, marketing emails, and automated notifications (e.g., Bloomberg daily digests).
 
 ### What We Did
