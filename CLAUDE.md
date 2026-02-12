@@ -53,6 +53,17 @@ Maintain `docs/development_log.md` as a running journal of development sessions.
 
 This log will be used for a blog post about the development journey.
 
+## Worktrees
+
+Feature branches use worktrees: `git worktree add ../email-agent-<feature> -b feature/<branch> origin/main`
+
+After creating a new worktree, copy `.env` and `config/` (contains `credentials.json` and token files) from the main worktree — these are gitignored and required for integration/e2e tests:
+
+```bash
+cp .env ../email-agent-<feature>/
+cp -r config ../email-agent-<feature>/
+```
+
 ## Pull Request Guidelines
 
 Prefer smaller, focused PRs to reduce review burden:
