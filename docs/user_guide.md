@@ -1,90 +1,123 @@
 # User Guide
 
-## What Is the Agentic Email Organizer?
-
-The Agentic Email Organizer is your personal email assistant. It reads your Gmail inbox, identifies action items buried in your messages, and turns them into tasks in Google Tasks — automatically, on a recurring schedule.
-
-Instead of scanning through dozens of emails to figure out what needs doing, you get a clean task list and a daily summary delivered to your inbox.
+The Agentic Email Organizer is an email-to-task assistant. It reads your Gmail, extracts action items, and creates tasks in Google Tasks.
 
 ## Features
 
-### Automatic Task Extraction
+### Task Extraction
 
-Every time the agent runs, it reads your unread emails and uses AI to identify actionable items. For each task it finds, it captures:
+The agent reads your unread emails and uses AI to pull out actionable items. Each task includes:
 
-- A clear, actionable **title** (e.g., "Review budget proposal", "Schedule team meeting")
-- A **description** with context from the email
-- A **due date**, if one was mentioned in the message
-- A **priority level** — urgent, high, medium, or low — based on the language and deadlines in the email
+- **Title** — a short, actionable description
+- **Description** — context from the email
+- **Due date** — if a deadline was mentioned
+- **Priority** — urgent, high, medium, or low, based on the language in the email
 
-Tasks appear directly in your Google Tasks, ready to work through.
+Tasks are created in a Google Tasks list called **"Email Tasks"**.
 
-### Smart Prioritization
+### Auto-Completion
 
-The agent assesses priority based on cues in the email:
-
-- **Urgent** — words like "ASAP", "immediately", or same-day deadlines
-- **High** — near-term deadlines, important stakeholders, or blocking issues
-- **Medium** — standard requests with reasonable timelines
-- **Low** — FYI items, optional follow-ups, or messages with no deadline
-
-### Auto-Completion on Reply
-
-When you reply to an email that generated tasks, the agent detects your reply and automatically marks those tasks as complete. No need to manually close them — just respond to the email as you normally would, and the agent takes care of the rest.
+When you reply to an email that generated tasks, the agent picks up the reply and marks those tasks as complete automatically.
 
 ### Daily Digest
 
-Once a day, you receive a digest email summarizing all your pending tasks, organized by urgency:
+A daily email summarizing your pending tasks, grouped into sections:
 
-- **Overdue** — tasks past their due date
-- **Due Today** — tasks that need attention now
-- **Due This Week** — tasks coming up in the next seven days
-- **Due Later** — tasks with distant deadlines
-- **No Due Date** — tasks without a specific deadline
+- **Overdue**
+- **Due Today**
+- **Due This Week**
+- **Due Later**
+- **No Due Date**
 
-The digest gives you a quick snapshot of where things stand without needing to open Google Tasks.
+### Deduplication
 
-### No Duplicates
+Processing the same email twice won't create duplicate tasks.
 
-If the same email is processed more than once, the agent recognizes it and skips creating duplicate tasks. Your task list stays clean.
+### Schedule
 
-### Runs in the Background
+The agent runs automatically in the background:
 
-Once set up, the agent runs automatically on a schedule:
+- **Every 2 hours** — processes new emails and creates tasks
+- **Every 2 hours** — checks Sent Mail and completes replied-to tasks
+- **Daily at 7:00 AM UTC** — sends the digest email
 
-- **Every 2 hours** — scans for new emails and creates tasks
-- **Every 2 hours** — checks your Sent Mail and completes tasks you've replied to
-- **Once daily (7:00 AM UTC)** — sends the task digest to your inbox
+## Task Commands
 
-You don't need to do anything — it works quietly in the background.
+You can control tasks by adding commands directly in the task notes inside Google Tasks. Write one command per line using the `@command` syntax. Commands are case-insensitive and are removed from the notes after they run.
 
-## What to Expect
+### @priority
 
-### Which Emails Create Tasks?
+Change a task's priority level.
 
-Not every email results in a task. The agent focuses on messages that contain clear action items — requests, deadlines, follow-ups, or anything requiring your attention. Newsletters, automated notifications, and purely informational emails are analyzed but typically produce no tasks.
+```
+@priority high
+```
 
-### Where Do Tasks Appear?
+Valid levels: `low`, `medium`, `high`, `urgent`.
 
-All tasks are created in a Google Tasks list called **"Email Tasks"**. If this list doesn't exist yet, the agent creates it automatically on the first run.
+### @due
 
-### Task Notes
+Set an absolute due date.
 
-Each task includes notes with context from the original email. At the bottom of the notes, you'll see a metadata section that links the task back to its source email thread. This is what allows the auto-completion feature to work — avoid removing it.
+```
+@due 2026-03-15
+```
+
+Date must be in `YYYY-MM-DD` format.
+
+### @snooze
+
+Push the due date forward by a relative amount.
+
+```
+@snooze 3 days
+@snooze 2 weeks
+```
+
+Valid units: `day`/`days`, `week`/`weeks`. If the task has no due date, it snoozes from today.
+
+### @ignore
+
+Dismiss a task by marking it as complete without deleting it.
+
+```
+@ignore
+```
+
+### @delete
+
+Permanently remove a task from Google Tasks.
+
+```
+@delete
+```
+
+### @note
+
+Append text to the task notes.
+
+```
+@note Check with Sarah before submitting
+```
+
+## Task Notes
+
+Each task has a metadata block at the bottom of its notes that links it back to the original email thread:
+
+```
+---email-agent-metadata---
+email_id: 18e1a2b3c4d5e6f7
+thread_id: 18e1a2b3c4d5e6f7
+```
+
+This is used for auto-completion and deduplication. Don't remove it.
 
 ## FAQ
 
-**Can I control how many emails are processed at once?**
-Yes. The agent processes up to 50 unread emails per run by default, but this limit is configurable.
+**Not every email creates a task.** The agent only extracts clear action items. Newsletters, notifications, and informational emails typically produce no tasks.
 
-**What happens if I delete a task manually?**
-Nothing — the agent won't recreate it. Once a task has been created for an email, that email is marked as processed.
+**Deleting a task manually is fine.** The agent won't recreate it.
 
-**What if the agent misses a task in an email?**
-AI-based extraction is very good but not perfect. If an action item is vague or implicit, it may not be picked up. Important tasks that aren't captured can be created manually in Google Tasks as you normally would.
+**The agent only reads unread inbox emails.** It does not access drafts, spam, trash, or other labels. It also reads recent Sent Mail to detect replies.
 
-**Does the agent read all my emails?**
-The agent only reads unread emails in your inbox. It does not access drafts, spam, trash, or emails in other labels. It also scans your Sent Mail folder (only recent messages) to detect replies for auto-completion.
-
-**Is my email data stored anywhere?**
-No. Emails are analyzed in real time and not stored. The only persistent data is the tasks created in your Google Tasks account and a small record of which emails have already been processed.
+**Email content is not stored.** The only persistent data is the tasks in Google Tasks and a record of which emails have been processed.
