@@ -88,6 +88,8 @@ class Task:
     completed: Optional[datetime] = None
     source_email_id: Optional[str] = None
     source_thread_id: Optional[str] = None
+    source_email_subject: Optional[str] = None
+    source_sender: Optional[str] = None
     task_list_id: Optional[str] = None
     position: Optional[str] = None
     parent: Optional[str] = None
@@ -107,6 +109,8 @@ class Task:
             "completed": self.completed.isoformat() if self.completed else None,
             "source_email_id": self.source_email_id,
             "source_thread_id": self.source_thread_id,
+            "source_email_subject": self.source_email_subject,
+            "source_sender": self.source_sender,
             "task_list_id": self.task_list_id,
             "position": self.position,
             "parent": self.parent,
@@ -133,6 +137,8 @@ class Task:
             completed=completed,
             source_email_id=data.get("source_email_id"),
             source_thread_id=data.get("source_thread_id"),
+            source_email_subject=data.get("source_email_subject"),
+            source_sender=data.get("source_sender"),
             task_list_id=data.get("task_list_id"),
             position=data.get("position"),
             parent=data.get("parent"),
@@ -165,6 +171,10 @@ class Task:
                 metadata_lines.append(f"email_id:{self.source_email_id}")
             if self.source_thread_id:
                 metadata_lines.append(f"thread_id:{self.source_thread_id}")
+            if self.source_email_subject:
+                metadata_lines.append(f"email_subject:{self.source_email_subject}")
+            if self.source_sender:
+                metadata_lines.append(f"sender:{self.source_sender}")
             notes_parts.append("\n".join(metadata_lines))
 
         if notes_parts:
@@ -200,6 +210,8 @@ class Task:
         # Extract metadata from notes
         source_email_id = None
         source_thread_id = None
+        source_email_subject = None
+        source_sender = None
         notes = data.get("notes", "")
         clean_notes = notes
 
@@ -213,6 +225,10 @@ class Task:
                         source_email_id = line[9:].strip()
                     elif line.startswith("thread_id:"):
                         source_thread_id = line[10:].strip()
+                    elif line.startswith("email_subject:"):
+                        source_email_subject = line[14:].strip()
+                    elif line.startswith("sender:"):
+                        source_sender = line[7:].strip()
 
         return cls(
             id=data.get("id"),
@@ -223,11 +239,20 @@ class Task:
             completed=completed,
             source_email_id=source_email_id,
             source_thread_id=source_thread_id,
+            source_email_subject=source_email_subject,
+            source_sender=source_sender,
             task_list_id=task_list_id,
             position=data.get("position"),
             parent=data.get("parent"),
             etag=data.get("etag"),
         )
+
+    @property
+    def gmail_url(self) -> Optional[str]:
+        """Construct a Gmail URL to the source email thread."""
+        if self.source_thread_id:
+            return f"https://mail.google.com/mail/u/0/#inbox/{self.source_thread_id}"
+        return None
 
     @property
     def is_completed(self) -> bool:

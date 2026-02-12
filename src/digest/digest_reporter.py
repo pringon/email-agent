@@ -105,17 +105,31 @@ class DigestReporter:
         return sections
 
     def _format_task_line(self, task) -> str:
-        """Format a single task as a plain text line.
+        """Format a single task as a plain text line with email origin info.
 
         Args:
             task: Task object to format.
 
         Returns:
-            Formatted string like "- [ ] Task title (due: 2026-02-15)".
+            Formatted string with task title, due date, email origin, and link.
         """
         line = f"- [ ] {task.title}"
         if task.due is not None:
             line += f" (due: {task.due.isoformat()})"
+
+        # Add source email info
+        if task.source_sender or task.source_email_subject:
+            origin_parts = []
+            if task.source_sender:
+                origin_parts.append(f"From: {task.source_sender}")
+            if task.source_email_subject:
+                origin_parts.append(f"Re: {task.source_email_subject}")
+            line += f"\n      {' | '.join(origin_parts)}"
+
+        # Add Gmail thread link
+        if task.gmail_url:
+            line += f"\n      {task.gmail_url}"
+
         return line
 
     # -------------------- Public API --------------------

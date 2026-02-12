@@ -527,3 +527,53 @@ Implement T14: Use LLM to infer which tasks a sent reply resolves, replacing the
 ```
 
 All unit tests passing (29 new reply resolver/completion tests + 256 existing tests).
+
+## Session 8 — 2026-02-12
+
+### Goal
+Add source email information and Gmail thread links to the daily task digest.
+
+### What We Did
+
+**1. Added email origin metadata to the pipeline**
+
+Extended `ExtractedTask` (analyzer model) and `Task` (tasks model) with two new fields:
+- `source_email_subject` — the subject line of the email that generated the task
+- `source_sender` — the sender name from the originating email
+
+These fields are embedded in the task notes metadata block (alongside existing `email_id` and `thread_id`) and round-trip through the Google Tasks API.
+
+**2. Wired metadata through the pipeline**
+
+- `EmailAnalyzer._parse_response()` now passes `email.subject` and `email.sender` to each `ExtractedTask`
+- `TaskManager.create_from_extracted_task()` forwards the fields to the `Task` model
+
+**3. Added Gmail URL property to Task model**
+
+`Task.gmail_url` constructs a clickable Gmail thread link from `source_thread_id`:
+`https://mail.google.com/mail/u/0/#inbox/{thread_id}`
+
+**4. Enhanced digest formatting**
+
+`DigestReporter._format_task_line()` now renders:
+```
+- [ ] Reply to budget proposal (due: 2026-02-15)
+      From: Alice Smith | Re: Budget Proposal Q1
+      https://mail.google.com/mail/u/0/#inbox/thread123
+```
+
+Email origin info and Gmail link only appear when the task has source email metadata. Tasks without email origin (e.g., manually created) render unchanged.
+
+### Key Decisions
+
+- Stored email subject/sender in the existing notes metadata block rather than adding Google Tasks API custom fields (which don't exist)
+- Used `Re:` prefix for subject to distinguish it from the task title
+- Gmail thread URL uses `/u/0/` for the default account; users with multiple accounts may need to adjust
+
+### Test Results
+
+```
+383 passed, 5 skipped
+```
+
+Added 11 new tests (7 for Task model metadata, 4 for digest formatting). All existing tests continue to pass.

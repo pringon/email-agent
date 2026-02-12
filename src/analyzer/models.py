@@ -64,6 +64,8 @@ class ExtractedTask:
     source_thread_id: str
     due_date: Optional[date] = None
     confidence: float = 1.0
+    source_email_subject: str = ""
+    source_sender: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize task to dictionary for storage."""
@@ -75,6 +77,8 @@ class ExtractedTask:
             "source_email_id": self.source_email_id,
             "source_thread_id": self.source_thread_id,
             "confidence": self.confidence,
+            "source_email_subject": self.source_email_subject,
+            "source_sender": self.source_sender,
         }
 
     @classmethod
@@ -95,6 +99,8 @@ class ExtractedTask:
             source_email_id=data["source_email_id"],
             source_thread_id=data["source_thread_id"],
             confidence=data.get("confidence", 1.0),
+            source_email_subject=data.get("source_email_subject", ""),
+            source_sender=data.get("source_sender", ""),
         )
 
 

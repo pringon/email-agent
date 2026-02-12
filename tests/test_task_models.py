@@ -235,6 +235,97 @@ class TestTask:
         assert task.status == TaskStatus.NEEDS_ACTION
         assert task.completed is None
 
+    def test_gmail_url_with_thread_id(self):
+        """Test gmail_url returns correct URL when thread ID is set."""
+        task = Task(title="Test", source_thread_id="thread123")
+        assert task.gmail_url == "https://mail.google.com/mail/u/0/#inbox/thread123"
+
+    def test_gmail_url_without_thread_id(self):
+        """Test gmail_url returns None when no thread ID."""
+        task = Task(title="Test")
+        assert task.gmail_url is None
+
+    def test_to_api_body_with_email_subject_and_sender(self):
+        """Test API body includes email subject and sender in metadata."""
+        task = Task(
+            title="Test Task",
+            source_email_id="email123",
+            source_thread_id="thread456",
+            source_email_subject="Budget Proposal",
+            source_sender="Alice Smith",
+        )
+        body = task.to_api_body()
+        assert "email_subject:Budget Proposal" in body["notes"]
+        assert "sender:Alice Smith" in body["notes"]
+
+    def test_from_api_response_extracts_email_subject_and_sender(self):
+        """Test metadata extraction includes email subject and sender."""
+        metadata = (
+            f"{Task.METADATA_PREFIX}\n"
+            "email_id:email123\n"
+            "thread_id:thread456\n"
+            "email_subject:Budget Proposal\n"
+            "sender:Alice Smith"
+        )
+        data = {
+            "id": "task123",
+            "title": "Test Task",
+            "notes": f"Some notes\n\n{metadata}",
+            "status": "needsAction",
+        }
+        task = Task.from_api_response(data)
+        assert task.source_email_subject == "Budget Proposal"
+        assert task.source_sender == "Alice Smith"
+        assert task.notes == "Some notes"
+
+    def test_to_dict_includes_email_subject_and_sender(self):
+        """Test serialization includes new email metadata fields."""
+        task = Task(
+            title="Test",
+            source_email_subject="Budget Proposal",
+            source_sender="Alice Smith",
+        )
+        data = task.to_dict()
+        assert data["source_email_subject"] == "Budget Proposal"
+        assert data["source_sender"] == "Alice Smith"
+
+    def test_from_dict_restores_email_subject_and_sender(self):
+        """Test deserialization restores new email metadata fields."""
+        data = {
+            "title": "Test",
+            "status": "needsAction",
+            "source_email_subject": "Budget Proposal",
+            "source_sender": "Alice Smith",
+        }
+        task = Task.from_dict(data)
+        assert task.source_email_subject == "Budget Proposal"
+        assert task.source_sender == "Alice Smith"
+
+    def test_metadata_roundtrip_with_subject_and_sender(self):
+        """Test API body -> API response roundtrip preserves new fields."""
+        original = Task(
+            title="Review contract",
+            notes="Check terms",
+            source_email_id="email123",
+            source_thread_id="thread456",
+            source_email_subject="Contract Review",
+            source_sender="Bob Jones",
+        )
+        body = original.to_api_body()
+        # Simulate API response (notes come back as-is)
+        api_response = {
+            "id": "task789",
+            "title": body["title"],
+            "notes": body.get("notes", ""),
+            "status": body["status"],
+        }
+        restored = Task.from_api_response(api_response)
+        assert restored.source_email_id == "email123"
+        assert restored.source_thread_id == "thread456"
+        assert restored.source_email_subject == "Contract Review"
+        assert restored.source_sender == "Bob Jones"
+        assert restored.notes == "Check terms"
+
 
 class TestExceptions:
     """Tests for exception classes."""

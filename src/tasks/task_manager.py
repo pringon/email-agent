@@ -416,6 +416,8 @@ class TaskManager:
             due=extracted.due_date,
             source_email_id=extracted.source_email_id,
             source_thread_id=extracted.source_thread_id,
+            source_email_subject=extracted.source_email_subject or None,
+            source_sender=extracted.source_sender or None,
         )
 
         return self.create_task(task, list_id)

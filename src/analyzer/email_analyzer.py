@@ -125,6 +125,8 @@ class EmailAnalyzer:
                     source_email_id=email.id,
                     source_thread_id=email.thread_id,
                     confidence=float(task_data.get("confidence", 1.0)),
+                    source_email_subject=email.subject,
+                    source_sender=email.sender,
                 )
                 tasks.append(task)
             except (KeyError, ValueError):

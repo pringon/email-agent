@@ -705,6 +705,73 @@ class TestFormatPlainText:
 
         assert "overdue" not in text.lower()
 
+    def test_format_task_with_email_origin(self, reporter):
+        """Test that email origin info is shown in task lines."""
+        task = Task(
+            title="Reply to budget proposal",
+            due=date(2026, 2, 15),
+            source_sender="Alice Smith",
+            source_email_subject="Budget Proposal Q1",
+            source_thread_id="thread123",
+        )
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[DigestSection(heading="Due This Week", tasks=[task])],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert "From: Alice Smith" in text
+        assert "Re: Budget Proposal Q1" in text
+        assert "https://mail.google.com/mail/u/0/#inbox/thread123" in text
+
+    def test_format_task_with_sender_only(self, reporter):
+        """Test task with sender but no subject."""
+        task = Task(
+            title="Follow up",
+            source_sender="Bob Jones",
+            source_thread_id="thread456",
+        )
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[DigestSection(heading="No Due Date", tasks=[task])],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert "From: Bob Jones" in text
+        assert "Re:" not in text
+
+    def test_format_task_with_gmail_link_only(self, reporter):
+        """Test task with thread ID but no sender/subject still shows link."""
+        task = Task(title="Check email", source_thread_id="thread789")
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[DigestSection(heading="No Due Date", tasks=[task])],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert "https://mail.google.com/mail/u/0/#inbox/thread789" in text
+
+    def test_format_task_without_email_info(self, reporter):
+        """Test task without email info shows no extra lines."""
+        task = Task(title="Manual task")
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[DigestSection(heading="No Due Date", tasks=[task])],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert "- [ ] Manual task" in text
+        assert "From:" not in text
+        assert "mail.google.com" not in text
+
 
 # ==================== Send Email Tests ====================
 
