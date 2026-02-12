@@ -1,8 +1,11 @@
 """Main EmailAnalyzer class for analyzing emails with LLM."""
 
 import json
+import logging
 from datetime import date
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from src.fetcher import Email
 
@@ -135,8 +138,8 @@ class EmailAnalyzer:
                     confidence=float(task_data.get("confidence", 1.0)),
                 )
                 tasks.append(task)
-            except (KeyError, ValueError):
-                # Skip malformed tasks but continue with others
+            except (KeyError, ValueError) as e:
+                logger.warning("Skipping malformed task in email %s: %s", email.id, e)
                 continue
 
         return AnalysisResult(

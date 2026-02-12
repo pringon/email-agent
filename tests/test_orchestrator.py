@@ -705,3 +705,35 @@ class TestRunAgentCLI:
 
             mock_cls.return_value.run_comment_processing.assert_called_once()
             mock_cls.return_value.run.assert_not_called()
+
+    def test_send_digest_flag(self):
+        with patch("run_agent.DigestReporter") as mock_reporter_cls:
+            mock_delivery = MagicMock()
+            mock_delivery.plain_text_output = "Digest summary here"
+            mock_delivery.errors = []
+            mock_reporter_cls.return_value.generate_and_send.return_value = (
+                mock_delivery
+            )
+
+            from run_agent import main
+
+            with patch("sys.argv", ["run_agent.py", "--send-digest", "user@example.com"]):
+                assert main() == 0
+
+            mock_reporter_cls.return_value.generate_and_send.assert_called_once_with(
+                recipient="user@example.com"
+            )
+
+    def test_send_digest_flag_with_errors(self):
+        with patch("run_agent.DigestReporter") as mock_reporter_cls:
+            mock_delivery = MagicMock()
+            mock_delivery.plain_text_output = "Partial digest"
+            mock_delivery.errors = ["Failed to send email: SMTP error"]
+            mock_reporter_cls.return_value.generate_and_send.return_value = (
+                mock_delivery
+            )
+
+            from run_agent import main
+
+            with patch("sys.argv", ["run_agent.py", "--send-digest", "user@example.com"]):
+                assert main() == 1
