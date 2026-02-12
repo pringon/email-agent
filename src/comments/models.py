@@ -15,6 +15,7 @@ class CommandType(Enum):
     IGNORE = "ignore"
     DELETE = "delete"
     NOTE = "note"
+    RESPOND = "respond"
 
 
 @dataclass
