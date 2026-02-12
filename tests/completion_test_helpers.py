@@ -5,6 +5,7 @@ Used by:
     - scripts/manual_test_completion_checker.py (manual smoke test)
 """
 
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -71,3 +72,35 @@ def create_test_task(
         status=TaskStatus.NEEDS_ACTION,
     )
     return task_manager.create_task(test_task)
+
+
+def wait_for_task_in_list(
+    task_manager: TaskManager,
+    thread_id: str,
+    timeout: float = 10,
+    interval: float = 1,
+) -> None:
+    """Poll list_tasks until a task with the given thread_id is visible.
+
+    The Google Tasks API can have eventual consistency delays between
+    creating a task and it appearing in list queries.
+
+    Args:
+        task_manager: TaskManager instance.
+        thread_id: Gmail thread ID to wait for.
+        timeout: Maximum seconds to wait.
+        interval: Seconds between polls.
+
+    Raises:
+        TimeoutError: If the task doesn't appear within the timeout.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for task in task_manager.list_tasks(show_completed=False):
+            if task.source_thread_id == thread_id:
+                return
+        time.sleep(interval)
+    raise TimeoutError(
+        f"Task with thread_id {thread_id} not visible in list_tasks "
+        f"after {timeout}s"
+    )

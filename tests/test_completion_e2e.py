@@ -16,14 +16,20 @@ Configure via environment variables:
 """
 
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
 from src.completion import CompletionChecker
+from src.completion.reply_resolver import ReplyResolver
 from src.tasks import TaskManager
 from src.tasks.models import TaskStatus
 
-from tests.completion_test_helpers import create_test_task, fetch_thread_id_from_sent_mail
+from tests.completion_test_helpers import (
+    create_test_task,
+    fetch_thread_id_from_sent_mail,
+    wait_for_task_in_list,
+)
 
 
 @pytest.mark.integration
@@ -36,9 +42,22 @@ class TestCompletionCheckerE2E:
         return TaskManager()
 
     @pytest.fixture(scope="class")
-    def checker(self):
-        """Create a CompletionChecker with real credentials."""
-        return CompletionChecker()
+    def checker(self, task_manager):
+        """Create a CompletionChecker with real Gmail/Tasks APIs.
+
+        Uses a mock ReplyResolver that resolves all tasks for a matched
+        thread. The e2e tests verify plumbing (thread matching, task
+        discovery, completion) — LLM judgment is tested separately in
+        the ReplyResolver unit tests.
+        """
+        mock_resolver = MagicMock(spec=ReplyResolver)
+        mock_resolver.resolve.side_effect = (
+            lambda reply_body, subject, tasks: [t.id for t in tasks if t.id]
+        )
+        return CompletionChecker(
+            task_manager=task_manager,
+            reply_resolver=mock_resolver,
+        )
 
     def test_fetch_sent_emails(self, checker):
         """Verify we can fetch sent emails from Gmail."""
@@ -110,6 +129,9 @@ class TestCompletionCheckerE2E:
                 f"Task thread_id mismatch: {fetched.source_thread_id} != {thread_id}"
             )
             assert fetched.status == TaskStatus.NEEDS_ACTION
+
+            # Wait for the task to be visible in list_tasks (API propagation)
+            wait_for_task_in_list(task_manager, thread_id)
 
             # Step 3: Run CompletionChecker
             result = checker.check_for_completions(since=since, max_results=10)
