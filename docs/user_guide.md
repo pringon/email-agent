@@ -1,166 +1,90 @@
 # User Guide
 
-## Overview
+## What Is the Agentic Email Organizer?
 
-The Agentic Email Organizer is an intelligent assistant that:
+The Agentic Email Organizer is your personal email assistant. It reads your Gmail inbox, identifies action items buried in your messages, and turns them into tasks in Google Tasks — automatically, on a recurring schedule.
 
-- Reads your Gmail inbox and analyzes messages with OpenAI GPT-4
-- Extracts actionable tasks and creates them in Google Tasks
-- Monitors your Sent Mail to auto-complete tasks when you reply
-- Generates daily digests summarizing your pending tasks
+Instead of scanning through dozens of emails to figure out what needs doing, you get a clean task list and a daily summary delivered to your inbox.
 
-It runs on demand via the CLI or automatically via GitHub Actions.
+## Features
 
-## Prerequisites
+### Automatic Task Extraction
 
-- Python 3.10 or later
-- A Google Cloud project with the **Gmail API** and **Google Tasks API** enabled
-- An [OpenAI API key](https://platform.openai.com/api-keys)
+Every time the agent runs, it reads your unread emails and uses AI to identify actionable items. For each task it finds, it captures:
 
-## Installation
+- A clear, actionable **title** (e.g., "Review budget proposal", "Schedule team meeting")
+- A **description** with context from the email
+- A **due date**, if one was mentioned in the message
+- A **priority level** — urgent, high, medium, or low — based on the language and deadlines in the email
 
-```bash
-git clone https://github.com/pringon/email-agent.git
-cd email-agent
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+Tasks appear directly in your Google Tasks, ready to work through.
 
-## Google Cloud Setup
+### Smart Prioritization
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a new project (or select an existing one).
-2. Enable the **Gmail API** and **Google Tasks API** from the API Library.
-3. Go to **APIs & Services > Credentials** and create an **OAuth 2.0 Client ID** (application type: Desktop app).
-4. Download the credentials JSON file and save it as `config/credentials.json` in the project root.
+The agent assesses priority based on cues in the email:
 
-> **Tip:** If your OAuth consent screen is in "Testing" mode, refresh tokens expire after 7 days. Publishing the app to "Production" (internal use is fine) gives you long-lived tokens.
+- **Urgent** — words like "ASAP", "immediately", or same-day deadlines
+- **High** — near-term deadlines, important stakeholders, or blocking issues
+- **Medium** — standard requests with reasonable timelines
+- **Low** — FYI items, optional follow-ups, or messages with no deadline
 
-## Configuration
+### Auto-Completion on Reply
 
-Create a `.env` file in the project root:
+When you reply to an email that generated tasks, the agent detects your reply and automatically marks those tasks as complete. No need to manually close them — just respond to the email as you normally would, and the agent takes care of the rest.
 
-```env
-OPENAI_API_KEY=sk-...
-```
+### Daily Digest
 
-That is the only required variable. The following optional variables override default paths and behavior:
+Once a day, you receive a digest email summarizing all your pending tasks, organized by urgency:
 
-| Variable | Default | Description |
-|---|---|---|
-| `GMAIL_CREDENTIALS_PATH` | `config/credentials.json` | Path to your OAuth client credentials |
-| `GMAIL_TOKEN_PATH` | `config/token.json` | Path to the cached Gmail OAuth token |
-| `TASKS_CREDENTIALS_PATH` | (same as Gmail credentials) | Separate credentials for Tasks API, if needed |
-| `TASKS_TOKEN_PATH` | `config/tasks_token.json` | Path to the cached Tasks OAuth token |
-| `GMAIL_NON_INTERACTIVE` | unset | Set to `1` to fail instead of opening a browser for re-auth (useful in CI) |
-| `TASKS_NON_INTERACTIVE` | unset | Same as above, for the Tasks API |
+- **Overdue** — tasks past their due date
+- **Due Today** — tasks that need attention now
+- **Due This Week** — tasks coming up in the next seven days
+- **Due Later** — tasks with distant deadlines
+- **No Due Date** — tasks without a specific deadline
 
-## First Run and OAuth
+The digest gives you a quick snapshot of where things stand without needing to open Google Tasks.
 
-On the first run, a browser window will open asking you to sign in with your Google account and grant permissions. After you authorize, token files are saved automatically (`config/token.json` and `config/tasks_token.json`) and reused on subsequent runs.
+### No Duplicates
 
-```bash
-python run_agent.py --max-emails 5
-```
+If the same email is processed more than once, the agent recognizes it and skips creating duplicate tasks. Your task list stays clean.
 
-Start with a small `--max-emails` value to verify everything works before processing your full inbox.
+### Runs in the Background
 
-## CLI Usage
+Once set up, the agent runs automatically on a schedule:
 
-```
-python run_agent.py [OPTIONS]
-```
+- **Every 2 hours** — scans for new emails and creates tasks
+- **Every 2 hours** — checks your Sent Mail and completes tasks you've replied to
+- **Once daily (7:00 AM UTC)** — sends the task digest to your inbox
 
-### Options
+You don't need to do anything — it works quietly in the background.
 
-| Flag | Description |
-|---|---|
-| `--max-emails N` | Maximum number of unread emails to process (default: 50) |
-| `--check-completions` | Scan Sent Mail for replies and auto-complete matching tasks |
-| `--send-digest EMAIL` | Generate a daily task digest and send it to the given email address |
+## What to Expect
 
-### Examples
+### Which Emails Create Tasks?
 
-```bash
-# Process up to 50 unread emails (default)
-python run_agent.py
+Not every email results in a task. The agent focuses on messages that contain clear action items — requests, deadlines, follow-ups, or anything requiring your attention. Newsletters, automated notifications, and purely informational emails are analyzed but typically produce no tasks.
 
-# Process only the 10 most recent unread emails
-python run_agent.py --max-emails 10
+### Where Do Tasks Appear?
 
-# Check Sent Mail and auto-complete tasks you've replied to
-python run_agent.py --check-completions
+All tasks are created in a Google Tasks list called **"Email Tasks"**. If this list doesn't exist yet, the agent creates it automatically on the first run.
 
-# Send a daily digest to yourself
-python run_agent.py --send-digest you@example.com
-```
+### Task Notes
 
-Each run prints a pipeline summary showing the status, duration, and key metrics for every step.
+Each task includes notes with context from the original email. At the bottom of the notes, you'll see a metadata section that links the task back to its source email thread. This is what allows the auto-completion feature to work — avoid removing it.
 
-## How It Works
+## FAQ
 
-The pipeline runs in four stages:
+**Can I control how many emails are processed at once?**
+Yes. The agent processes up to 50 unread emails per run by default, but this limit is configurable.
 
-1. **Fetch** — Retrieves unread emails from Gmail. Emails are deduplicated so the same message is never processed twice.
-2. **Analyze** — Sends each email to GPT-4, which returns a structured JSON response containing a summary, extracted tasks (with title, description, due date, and priority), and whether a response is needed.
-3. **Create Tasks** — Writes each extracted task to Google Tasks. Email metadata (message ID and thread ID) is embedded in the task notes so tasks stay linked to their source email.
-4. **Check Completions** (when `--check-completions` is passed) — Scans your Sent Mail for recent replies. If you replied to a thread that has linked tasks, those tasks are automatically marked as completed.
+**What happens if I delete a task manually?**
+Nothing — the agent won't recreate it. Once a task has been created for an email, that email is marked as processed.
 
-The **digest** (`--send-digest`) is a separate mode that reads all pending tasks from Google Tasks, groups them by due date (Overdue, Due Today, Due This Week, Due Later, No Due Date), and sends the report as an email.
+**What if the agent misses a task in an email?**
+AI-based extraction is very good but not perfect. If an action item is vague or implicit, it may not be picked up. Important tasks that aren't captured can be created manually in Google Tasks as you normally would.
 
-## Task Metadata
+**Does the agent read all my emails?**
+The agent only reads unread emails in your inbox. It does not access drafts, spam, trash, or emails in other labels. It also scans your Sent Mail folder (only recent messages) to detect replies for auto-completion.
 
-Every task created by the agent embeds metadata at the bottom of its notes:
-
-```
----email-agent-metadata---
-email_id: 18e1a2b3c4d5e6f7
-thread_id: 18e1a2b3c4d5e6f7
-```
-
-This is how the agent links tasks back to email threads. Do not remove this section — the completion checker uses it to match replies to tasks.
-
-## Scheduling with GitHub Actions
-
-Three workflows automate the agent:
-
-| Workflow | Schedule | What it does |
-|---|---|---|
-| `run_agent.yml` | Every 2 hours | Processes new emails and creates tasks |
-| `check_completions.yml` | Every 2 hours | Auto-completes tasks for replied threads |
-| `send_digest.yml` | Daily at 7:00 AM UTC | Sends a task digest email |
-
-All workflows can also be triggered manually via `workflow_dispatch`.
-
-### Required GitHub Secrets
-
-| Secret | Description |
-|---|---|
-| `GMAIL_PROD_CREDENTIALS` | Base64-encoded `credentials.json` |
-| `GMAIL_PROD_TOKEN` | Base64-encoded `token.json` |
-| `GOOGLE_TASKS_PROD_TOKEN` | Base64-encoded `tasks_token.json` |
-| `OPENAI_API_KEY` | Your OpenAI API key |
-| `DIGEST_RECIPIENT_EMAIL` | Email address for the daily digest |
-
-To base64-encode a file:
-
-```bash
-base64 -i config/credentials.json | tr -d '\n'
-```
-
-## Troubleshooting
-
-**OAuth token expired / re-authentication required**
-If running locally, delete `config/token.json` (or `config/tasks_token.json`) and run again — a browser window will open for re-authorization. In CI, you'll need to re-generate the token locally and update the corresponding GitHub secret.
-
-**`GMAIL_NON_INTERACTIVE` failures in CI**
-This means the cached token has expired and cannot be refreshed. Generate a fresh token locally, base64-encode it, and update the `GMAIL_PROD_TOKEN` secret.
-
-**Rate limits (HTTP 429)**
-The Gmail and Tasks APIs have quota limits. Reduce `--max-emails` or space out your cron schedule if you hit rate limits frequently.
-
-**Duplicate tasks**
-The agent deduplicates by email ID, so processing the same inbox twice will not create duplicate tasks. If you see duplicates, check that the task notes contain the `---email-agent-metadata---` section — tasks without metadata cannot be deduplicated.
-
-**No tasks extracted from an email**
-Not every email produces tasks. The LLM only extracts actionable items. Newsletters, notifications, and purely informational emails are summarized but may yield zero tasks.
+**Is my email data stored anywhere?**
+No. Emails are analyzed in real time and not stored. The only persistent data is the tasks created in your Google Tasks account and a small record of which emails have already been processed.
