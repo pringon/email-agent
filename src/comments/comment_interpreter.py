@@ -1,6 +1,7 @@
 """CommentInterpreter for parsing and executing user commands in task notes."""
 
 import base64
+import logging
 import re
 from datetime import date, timedelta
 from email.mime.text import MIMEText
@@ -9,13 +10,20 @@ from typing import Optional
 from googleapiclient.discovery import Resource
 from googleapiclient.errors import HttpError
 
-from src.analyzer.models import Priority
+from src.analyzer.adapter import LLMAdapter
+from src.analyzer.exceptions import AnalyzerError, LLMResponseError
+from src.analyzer.models import Message, MessageRole, Priority
+from src.analyzer.openai_adapter import OpenAIAdapter
+from src.fetcher.body_parser import extract_body
 from src.fetcher.gmail_auth import GmailAuthenticator
 from src.tasks.models import Task
 from src.tasks.task_manager import TaskManager
 
 from .exceptions import CommentExecutionError
 from .models import CommandResult, CommandType, ParsedCommand, ProcessingResult
+from .prompts import RESPOND_SYSTEM_PROMPT, RESPOND_USER_PROMPT_TEMPLATE
+
+logger = logging.getLogger(__name__)
 
 # Sentinel action returned by @delete handler
 _DELETE_ACTION = "__DELETE__"
@@ -55,11 +63,15 @@ class CommentInterpreter:
         "weeks": 7,
     }
 
+    MAX_BODY_LENGTH = 8000
+    MAX_LLM_RETRIES = 2
+
     def __init__(
         self,
         task_manager: Optional[TaskManager] = None,
         authenticator: Optional[GmailAuthenticator] = None,
         gmail_service: Optional[Resource] = None,
+        llm_adapter: Optional[LLMAdapter] = None,
     ):
         """Initialize the CommentInterpreter.
 
@@ -70,10 +82,13 @@ class CommentInterpreter:
                 Created with defaults if not provided. Only used by @respond.
             gmail_service: Pre-configured Gmail API service for testing.
                 Takes precedence over authenticator.
+            llm_adapter: LLM adapter for generating polished email replies.
+                Created as OpenAIAdapter if not provided. Only used by @respond.
         """
         self._task_manager = task_manager
         self._authenticator = authenticator
         self._gmail_service = gmail_service
+        self._llm_adapter = llm_adapter
 
     def _get_task_manager(self) -> TaskManager:
         """Get or create the TaskManager."""
@@ -88,6 +103,12 @@ class CommentInterpreter:
                 self._authenticator = GmailAuthenticator()
             self._gmail_service = self._authenticator.get_service()
         return self._gmail_service
+
+    def _get_llm_adapter(self) -> LLMAdapter:
+        """Get or create the LLM adapter for reply generation."""
+        if self._llm_adapter is None:
+            self._llm_adapter = OpenAIAdapter()
+        return self._llm_adapter
 
     # -------------------- Parsing --------------------
 
@@ -246,14 +267,70 @@ class CommentInterpreter:
             task.notes = text
         return f"Note appended: {text}"
 
-    def _fetch_original_email_headers(self, message_id: str) -> dict[str, str]:
-        """Fetch headers needed for replying to the original email.
+    def _generate_reply_body(
+        self,
+        user_message: str,
+        original_subject: str,
+        original_sender: str,
+        original_body: str,
+    ) -> str:
+        """Use the LLM to expand a short user message into a polished email reply.
+
+        Args:
+            user_message: The user's short reply instructions.
+            original_subject: Subject of the original email.
+            original_sender: Sender of the original email.
+            original_body: Body text of the original email.
+
+        Returns:
+            The LLM-generated reply body text.
+
+        Raises:
+            CommentExecutionError: If the LLM call fails.
+        """
+        adapter = self._get_llm_adapter()
+        user_content = RESPOND_USER_PROMPT_TEMPLATE.format(
+            original_subject=original_subject,
+            original_sender=original_sender,
+            original_body=original_body[: self.MAX_BODY_LENGTH],
+            user_instructions=user_message,
+        )
+        messages = [
+            Message(role=MessageRole.SYSTEM, content=RESPOND_SYSTEM_PROMPT),
+            Message(role=MessageRole.USER, content=user_content),
+        ]
+
+        last_error: Optional[LLMResponseError] = None
+        for attempt in range(self.MAX_LLM_RETRIES + 1):
+            try:
+                return adapter.complete(
+                    messages=messages,
+                    temperature=0.3,
+                )
+            except LLMResponseError as e:
+                last_error = e
+                if attempt < self.MAX_LLM_RETRIES:
+                    logger.warning(
+                        "LLM response error on attempt %d, retrying: %s",
+                        attempt + 1,
+                        e,
+                    )
+                    continue
+
+        raise CommentExecutionError(
+            "respond",
+            "",
+            f"Failed to generate reply after {self.MAX_LLM_RETRIES + 1} attempts: {last_error}",
+        )
+
+    def _fetch_original_email(self, message_id: str) -> dict[str, str]:
+        """Fetch the original email including headers and body.
 
         Args:
             message_id: Gmail message ID of the original email.
 
         Returns:
-            Dict with keys: 'from', 'subject', 'message_id'.
+            Dict with keys: 'from', 'subject', 'message_id', 'body'.
 
         Raises:
             CommentExecutionError: If the email cannot be fetched.
@@ -266,8 +343,7 @@ class CommentInterpreter:
                 .get(
                     userId="me",
                     id=message_id,
-                    format="metadata",
-                    metadataHeaders=["From", "Subject", "Message-ID"],
+                    format="full",
                 )
                 .execute()
             )
@@ -276,17 +352,25 @@ class CommentInterpreter:
                 "respond", message_id, f"Failed to fetch original email: {e}"
             )
 
-        headers = message.get("payload", {}).get("headers", [])
+        payload = message.get("payload", {})
+        headers = payload.get("headers", [])
         header_map = {h["name"].lower(): h["value"] for h in headers}
+
+        body, _ = extract_body(payload)
 
         return {
             "from": header_map.get("from", ""),
             "subject": header_map.get("subject", "(No Subject)"),
             "message_id": header_map.get("message-id", ""),
+            "body": body or "",
         }
 
     def _execute_respond(self, task: Task, command: ParsedCommand) -> str:
-        """Send a reply to the original email thread and mark task completed."""
+        """Send an LLM-polished reply to the original email thread.
+
+        The user's short message is expanded into a professional email reply
+        using the LLM, with the original email as context.
+        """
         if not task.source_thread_id:
             raise CommentExecutionError(
                 "respond",
@@ -300,15 +384,15 @@ class CommentInterpreter:
                 "Task has no source email ID. Cannot send reply.",
             )
 
-        message_body = command.arguments.strip()
-        if not message_body:
+        user_message = command.arguments.strip()
+        if not user_message:
             raise CommentExecutionError(
                 "respond",
                 task.id or "",
                 "Reply message is empty. Use '@respond <your message>'.",
             )
 
-        original = self._fetch_original_email_headers(task.source_email_id)
+        original = self._fetch_original_email(task.source_email_id)
 
         if not original["from"]:
             raise CommentExecutionError(
@@ -321,7 +405,21 @@ class CommentInterpreter:
         if not subject.lower().startswith("re:"):
             subject = f"Re: {subject}"
 
-        mime_message = MIMEText(message_body)
+        try:
+            reply_body = self._generate_reply_body(
+                user_message=user_message,
+                original_subject=original["subject"],
+                original_sender=original["from"],
+                original_body=original["body"],
+            )
+        except AnalyzerError as e:
+            raise CommentExecutionError(
+                "respond",
+                task.id or "",
+                f"Failed to generate reply: {e}",
+            )
+
+        mime_message = MIMEText(reply_body)
         mime_message["to"] = original["from"]
         mime_message["subject"] = subject
         if original["message_id"]:
