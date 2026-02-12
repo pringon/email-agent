@@ -8,15 +8,11 @@ from typing import Optional
 from googleapiclient.discovery import Resource
 from googleapiclient.errors import HttpError
 
-from src.fetcher.gmail_auth import DEFAULT_SCOPES as GMAIL_DEFAULT_SCOPES
 from src.fetcher.gmail_auth import GmailAuthenticator
 from src.tasks.task_manager import TaskManager
 
 from .exceptions import DigestBuildError, DigestDeliveryError
 from .models import DeliveryResult, DigestReport, DigestSection
-
-# Gmail scope required for sending emails
-GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 
 
 class DigestReporter:
@@ -38,7 +34,7 @@ class DigestReporter:
             task_manager: TaskManager instance for fetching tasks.
                 Created automatically if not provided.
             authenticator: GmailAuthenticator for sending digest emails.
-                Created with gmail.send scope if not provided.
+                Created with default scopes if not provided.
             gmail_service: Pre-built Gmail API service resource.
                 Overrides authenticator if provided.
         """
@@ -53,11 +49,14 @@ class DigestReporter:
         return self._task_manager
 
     def _get_gmail_service(self) -> Resource:
-        """Get or create the Gmail API service with send scope."""
+        """Get or create the Gmail API service for sending.
+
+        The default gmail.modify scope already covers messages.send,
+        so no additional scope is needed.
+        """
         if self._gmail_service is None:
             if self._authenticator is None:
-                scopes = list(GMAIL_DEFAULT_SCOPES) + [GMAIL_SEND_SCOPE]
-                self._authenticator = GmailAuthenticator(scopes=scopes)
+                self._authenticator = GmailAuthenticator()
             self._gmail_service = self._authenticator.get_service()
         return self._gmail_service
 

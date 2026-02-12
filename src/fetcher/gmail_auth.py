@@ -71,15 +71,21 @@ class GmailAuthenticator:
     def _validate_token_scopes(self, creds: Credentials) -> bool:
         """Check if token has all required scopes.
 
+        Uses granted_scopes (the scopes actually stored in the token file)
+        rather than scopes (the requested scopes passed at load time),
+        so that mismatches between the token and the requested scopes are
+        properly detected.
+
         Args:
             creds: Credentials object to validate
 
         Returns:
             True if token has all required scopes, False otherwise
         """
-        if not creds.scopes:
+        granted = creds.granted_scopes or creds.scopes
+        if not granted:
             return False
-        return all(scope in creds.scopes for scope in self._scopes)
+        return all(scope in granted for scope in self._scopes)
 
     def _load_or_refresh_credentials(self) -> Credentials:
         """Load existing credentials or create new ones.
