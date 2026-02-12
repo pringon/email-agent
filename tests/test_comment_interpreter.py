@@ -1,9 +1,12 @@
 """Unit tests for the CommentInterpreter module."""
 
+import base64
 from datetime import date, datetime, timedelta
+from email import message_from_bytes
 from unittest.mock import MagicMock, call
 
 import pytest
+from googleapiclient.errors import HttpError
 
 from src.comments import (
     CommandResult,
@@ -32,10 +35,11 @@ class TestCommandType:
         assert CommandType.IGNORE.value == "ignore"
         assert CommandType.DELETE.value == "delete"
         assert CommandType.NOTE.value == "note"
+        assert CommandType.RESPOND.value == "respond"
 
     def test_command_type_count(self):
         """Verify expected number of command types."""
-        assert len(CommandType) == 6
+        assert len(CommandType) == 7
 
 
 class TestParsedCommand:
@@ -341,7 +345,7 @@ class TestParseCommands:
         assert commands[0].raw_text == "@due 2026-05-01"
 
     def test_parse_all_command_types(self, interpreter):
-        """All six command types are recognized."""
+        """All seven command types are recognized."""
         notes = "\n".join([
             "@priority high",
             "@due 2026-03-01",
@@ -349,10 +353,24 @@ class TestParseCommands:
             "@ignore",
             "@delete",
             "@note hello",
+            "@respond Got it, thanks!",
         ])
         commands = interpreter.parse_commands(notes)
         types = {c.command_type for c in commands}
         assert types == set(CommandType)
+
+    def test_parse_respond_command(self, interpreter):
+        """Parse a @respond command with full message."""
+        commands = interpreter.parse_commands("@respond Thanks, I'll handle this")
+        assert len(commands) == 1
+        assert commands[0].command_type == CommandType.RESPOND
+        assert commands[0].arguments == "Thanks, I'll handle this"
+
+    def test_parse_respond_preserves_special_characters(self, interpreter):
+        """Arguments with special characters are preserved."""
+        commands = interpreter.parse_commands("@respond I'll be there @ 3pm, OK?")
+        assert len(commands) == 1
+        assert commands[0].arguments == "I'll be there @ 3pm, OK?"
 
 
 class TestStripCommands:
@@ -823,3 +841,298 @@ class TestProcessPendingTasks:
         assert result.has_errors is True
         # The first task's commands were found before the error
         assert result.commands_found >= 1
+
+
+# ==================== Gmail Helpers ====================
+
+
+def _make_gmail_headers_response(
+    from_addr="sender@example.com",
+    subject="Original Subject",
+    message_id="<orig@msg.id>",
+):
+    """Build a mock Gmail API metadata response."""
+    headers = []
+    if from_addr:
+        headers.append({"name": "From", "value": from_addr})
+    if subject:
+        headers.append({"name": "Subject", "value": subject})
+    if message_id:
+        headers.append({"name": "Message-ID", "value": message_id})
+    return {"payload": {"headers": headers}}
+
+
+def _make_task(
+    task_id="task1",
+    title="Reply to email",
+    notes=None,
+    source_thread_id="thread123",
+    source_email_id="msg456",
+):
+    """Build a Task with email metadata for testing."""
+    return Task(
+        id=task_id,
+        title=title,
+        notes=notes,
+        source_thread_id=source_thread_id,
+        source_email_id=source_email_id,
+    )
+
+
+def _decode_sent_message(mock_gmail_service):
+    """Extract and decode the MIME message from the send() call."""
+    send_call = mock_gmail_service.users().messages().send
+    body = send_call.call_args[1]["body"]
+    raw_bytes = base64.urlsafe_b64decode(body["raw"])
+    return message_from_bytes(raw_bytes)
+
+
+# ==================== @respond Execution Tests ====================
+
+
+class TestExecuteRespond:
+    """Tests for the @respond command."""
+
+    @pytest.fixture
+    def mock_gmail_service(self):
+        """Create a mock Gmail API service with default successful responses."""
+        service = MagicMock()
+        service.users().messages().get().execute.return_value = (
+            _make_gmail_headers_response()
+        )
+        service.users().messages().send().execute.return_value = {
+            "id": "sent_msg_id"
+        }
+        return service
+
+    @pytest.fixture
+    def mock_task_manager(self):
+        return MagicMock()
+
+    @pytest.fixture
+    def interpreter(self, mock_gmail_service, mock_task_manager):
+        return CommentInterpreter(
+            task_manager=mock_task_manager,
+            gmail_service=mock_gmail_service,
+        )
+
+    @pytest.fixture
+    def task(self):
+        return _make_task()
+
+    @pytest.fixture
+    def respond_command(self):
+        return ParsedCommand(
+            command_type=CommandType.RESPOND,
+            raw_text="@respond Thanks, I'll handle this",
+            arguments="Thanks, I'll handle this",
+        )
+
+    # --- Happy path ---
+
+    def test_respond_success(self, interpreter, task, respond_command):
+        """Successful respond returns action description with recipient."""
+        action = interpreter._execute_respond(task, respond_command)
+        assert "sender@example.com" in action
+        assert "completed" in action
+
+    def test_respond_marks_task_completed(self, interpreter, task, respond_command):
+        """Task is marked as completed after sending reply."""
+        interpreter._execute_respond(task, respond_command)
+        assert task.is_completed
+        assert task.completed is not None
+
+    # --- Reply headers ---
+
+    def test_respond_sends_to_original_sender(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """Reply is addressed to the original email's From header."""
+        interpreter._execute_respond(task, respond_command)
+        msg = _decode_sent_message(mock_gmail_service)
+        assert msg["to"] == "sender@example.com"
+
+    def test_respond_subject_re_prefix(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """Reply subject gets Re: prefix."""
+        interpreter._execute_respond(task, respond_command)
+        msg = _decode_sent_message(mock_gmail_service)
+        assert msg["subject"] == "Re: Original Subject"
+
+    def test_respond_subject_already_re(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """Re: prefix is not doubled when already present."""
+        mock_gmail_service.users().messages().get().execute.return_value = (
+            _make_gmail_headers_response(subject="Re: Already prefixed")
+        )
+        interpreter._execute_respond(task, respond_command)
+        msg = _decode_sent_message(mock_gmail_service)
+        assert msg["subject"] == "Re: Already prefixed"
+
+    def test_respond_sets_in_reply_to(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """In-Reply-To and References headers are set from original Message-ID."""
+        interpreter._execute_respond(task, respond_command)
+        msg = _decode_sent_message(mock_gmail_service)
+        assert msg["In-Reply-To"] == "<orig@msg.id>"
+        assert msg["References"] == "<orig@msg.id>"
+
+    def test_respond_sends_with_thread_id(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """Send call includes threadId to keep reply in same Gmail thread."""
+        interpreter._execute_respond(task, respond_command)
+        send_call = mock_gmail_service.users().messages().send
+        body = send_call.call_args[1]["body"]
+        assert body["threadId"] == "thread123"
+
+    def test_respond_message_body(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """Reply body matches the command argument."""
+        interpreter._execute_respond(task, respond_command)
+        msg = _decode_sent_message(mock_gmail_service)
+        assert msg.get_payload() == "Thanks, I'll handle this"
+
+    # --- Graceful degradation ---
+
+    def test_respond_no_message_id_header(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """Missing Message-ID sends reply without In-Reply-To/References."""
+        mock_gmail_service.users().messages().get().execute.return_value = (
+            _make_gmail_headers_response(message_id="")
+        )
+        interpreter._execute_respond(task, respond_command)
+        msg = _decode_sent_message(mock_gmail_service)
+        assert msg["In-Reply-To"] is None
+        assert msg["References"] is None
+
+    # --- Error cases ---
+
+    def test_respond_no_thread_id(self, interpreter, respond_command):
+        """Task without source_thread_id raises CommentExecutionError."""
+        task = _make_task(source_thread_id=None)
+        with pytest.raises(CommentExecutionError, match="no source email thread"):
+            interpreter._execute_respond(task, respond_command)
+
+    def test_respond_no_email_id(self, interpreter, respond_command):
+        """Task without source_email_id raises CommentExecutionError."""
+        task = _make_task(source_email_id=None)
+        with pytest.raises(CommentExecutionError, match="no source email ID"):
+            interpreter._execute_respond(task, respond_command)
+
+    def test_respond_empty_message(self, interpreter, task):
+        """Empty message raises CommentExecutionError."""
+        cmd = ParsedCommand(
+            command_type=CommandType.RESPOND,
+            raw_text="@respond",
+            arguments="",
+        )
+        with pytest.raises(CommentExecutionError, match="Reply message is empty"):
+            interpreter._execute_respond(task, cmd)
+
+    def test_respond_whitespace_only_message(self, interpreter, task):
+        """Whitespace-only message raises CommentExecutionError."""
+        cmd = ParsedCommand(
+            command_type=CommandType.RESPOND,
+            raw_text="@respond   ",
+            arguments="   ",
+        )
+        with pytest.raises(CommentExecutionError, match="Reply message is empty"):
+            interpreter._execute_respond(task, cmd)
+
+    def test_respond_no_from_header(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """Missing From header raises CommentExecutionError."""
+        mock_gmail_service.users().messages().get().execute.return_value = (
+            _make_gmail_headers_response(from_addr="")
+        )
+        with pytest.raises(CommentExecutionError, match="Could not determine recipient"):
+            interpreter._execute_respond(task, respond_command)
+
+    def test_respond_fetch_fails(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """Gmail get() failure raises CommentExecutionError."""
+        mock_gmail_service.users().messages().get().execute.side_effect = HttpError(
+            resp=MagicMock(status=404), content=b"Not found"
+        )
+        with pytest.raises(CommentExecutionError, match="Failed to fetch original email"):
+            interpreter._execute_respond(task, respond_command)
+
+    def test_respond_send_fails_task_not_completed(
+        self, interpreter, task, respond_command, mock_gmail_service
+    ):
+        """Send failure raises error and task stays open."""
+        mock_gmail_service.users().messages().send().execute.side_effect = HttpError(
+            resp=MagicMock(status=500), content=b"Server error"
+        )
+        with pytest.raises(CommentExecutionError, match="Failed to send reply"):
+            interpreter._execute_respond(task, respond_command)
+        assert task.status == TaskStatus.NEEDS_ACTION
+
+
+# ==================== @respond Integration via _process_task ====================
+
+
+class TestProcessTaskRespond:
+    """Tests for @respond flowing through _process_task."""
+
+    @pytest.fixture
+    def mock_gmail_service(self):
+        service = MagicMock()
+        service.users().messages().get().execute.return_value = (
+            _make_gmail_headers_response()
+        )
+        service.users().messages().send().execute.return_value = {"id": "sent_id"}
+        return service
+
+    @pytest.fixture
+    def mock_task_manager(self):
+        return MagicMock()
+
+    @pytest.fixture
+    def interpreter(self, mock_gmail_service, mock_task_manager):
+        return CommentInterpreter(
+            task_manager=mock_task_manager,
+            gmail_service=mock_gmail_service,
+        )
+
+    def test_process_task_respond_calls_update(
+        self, interpreter, mock_task_manager
+    ):
+        """@respond processes and calls update_task."""
+        task = _make_task(notes="@respond Got it, thanks!")
+        results = interpreter._process_task(task)
+        assert len(results) == 1
+        assert results[0].success
+        assert results[0].command.command_type == CommandType.RESPOND
+        mock_task_manager.update_task.assert_called_once()
+
+    def test_process_task_respond_strips_command_from_notes(
+        self, interpreter, mock_task_manager
+    ):
+        """@respond line is removed from notes after processing."""
+        task = _make_task(notes="Some context\n@respond Got it")
+        interpreter._process_task(task)
+        updated_task = mock_task_manager.update_task.call_args[0][0]
+        assert "@respond" not in (updated_task.notes or "")
+        assert "Some context" in (updated_task.notes or "")
+
+    def test_process_task_respond_failure_recorded(
+        self, interpreter, mock_gmail_service, mock_task_manager
+    ):
+        """Send failure is recorded as a failed CommandResult."""
+        mock_gmail_service.users().messages().send().execute.side_effect = HttpError(
+            resp=MagicMock(status=500), content=b"Server error"
+        )
+        task = _make_task(notes="@respond Will do")
+        results = interpreter._process_task(task)
+        assert len(results) == 1
+        assert not results[0].success
+        assert "Failed to send reply" in results[0].error

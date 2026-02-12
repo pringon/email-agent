@@ -1,10 +1,16 @@
 """CommentInterpreter for parsing and executing user commands in task notes."""
 
+import base64
 import re
 from datetime import date, timedelta
+from email.mime.text import MIMEText
 from typing import Optional
 
+from googleapiclient.discovery import Resource
+from googleapiclient.errors import HttpError
+
 from src.analyzer.models import Priority
+from src.fetcher.gmail_auth import GmailAuthenticator
 from src.tasks.models import Task
 from src.tasks.task_manager import TaskManager
 
@@ -32,6 +38,7 @@ class CommentInterpreter:
         "ignore": CommandType.IGNORE,
         "delete": CommandType.DELETE,
         "note": CommandType.NOTE,
+        "respond": CommandType.RESPOND,
     }
 
     PRIORITY_MAP: dict[str, Priority] = {
@@ -48,20 +55,39 @@ class CommentInterpreter:
         "weeks": 7,
     }
 
-    def __init__(self, task_manager: Optional[TaskManager] = None):
+    def __init__(
+        self,
+        task_manager: Optional[TaskManager] = None,
+        authenticator: Optional[GmailAuthenticator] = None,
+        gmail_service: Optional[Resource] = None,
+    ):
         """Initialize the CommentInterpreter.
 
         Args:
             task_manager: TaskManager instance for task operations.
                 Created automatically if not provided.
+            authenticator: GmailAuthenticator for Gmail API access.
+                Created with defaults if not provided. Only used by @respond.
+            gmail_service: Pre-configured Gmail API service for testing.
+                Takes precedence over authenticator.
         """
         self._task_manager = task_manager
+        self._authenticator = authenticator
+        self._gmail_service = gmail_service
 
     def _get_task_manager(self) -> TaskManager:
         """Get or create the TaskManager."""
         if self._task_manager is None:
             self._task_manager = TaskManager()
         return self._task_manager
+
+    def _get_gmail_service(self) -> Resource:
+        """Get or create the Gmail API service for sending replies."""
+        if self._gmail_service is None:
+            if self._authenticator is None:
+                self._authenticator = GmailAuthenticator()
+            self._gmail_service = self._authenticator.get_service()
+        return self._gmail_service
 
     # -------------------- Parsing --------------------
 
@@ -220,6 +246,104 @@ class CommentInterpreter:
             task.notes = text
         return f"Note appended: {text}"
 
+    def _fetch_original_email_headers(self, message_id: str) -> dict[str, str]:
+        """Fetch headers needed for replying to the original email.
+
+        Args:
+            message_id: Gmail message ID of the original email.
+
+        Returns:
+            Dict with keys: 'from', 'subject', 'message_id'.
+
+        Raises:
+            CommentExecutionError: If the email cannot be fetched.
+        """
+        service = self._get_gmail_service()
+        try:
+            message = (
+                service.users()
+                .messages()
+                .get(
+                    userId="me",
+                    id=message_id,
+                    format="metadata",
+                    metadataHeaders=["From", "Subject", "Message-ID"],
+                )
+                .execute()
+            )
+        except HttpError as e:
+            raise CommentExecutionError(
+                "respond", message_id, f"Failed to fetch original email: {e}"
+            )
+
+        headers = message.get("payload", {}).get("headers", [])
+        header_map = {h["name"].lower(): h["value"] for h in headers}
+
+        return {
+            "from": header_map.get("from", ""),
+            "subject": header_map.get("subject", "(No Subject)"),
+            "message_id": header_map.get("message-id", ""),
+        }
+
+    def _execute_respond(self, task: Task, command: ParsedCommand) -> str:
+        """Send a reply to the original email thread and mark task completed."""
+        if not task.source_thread_id:
+            raise CommentExecutionError(
+                "respond",
+                task.id or "",
+                "Task has no source email thread. Cannot send reply.",
+            )
+        if not task.source_email_id:
+            raise CommentExecutionError(
+                "respond",
+                task.id or "",
+                "Task has no source email ID. Cannot send reply.",
+            )
+
+        message_body = command.arguments.strip()
+        if not message_body:
+            raise CommentExecutionError(
+                "respond",
+                task.id or "",
+                "Reply message is empty. Use '@respond <your message>'.",
+            )
+
+        original = self._fetch_original_email_headers(task.source_email_id)
+
+        if not original["from"]:
+            raise CommentExecutionError(
+                "respond",
+                task.id or "",
+                "Could not determine recipient from original email.",
+            )
+
+        subject = original["subject"]
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+
+        mime_message = MIMEText(message_body)
+        mime_message["to"] = original["from"]
+        mime_message["subject"] = subject
+        if original["message_id"]:
+            mime_message["In-Reply-To"] = original["message_id"]
+            mime_message["References"] = original["message_id"]
+
+        raw = base64.urlsafe_b64encode(mime_message.as_bytes()).decode()
+
+        service = self._get_gmail_service()
+        try:
+            service.users().messages().send(
+                userId="me",
+                body={"raw": raw, "threadId": task.source_thread_id},
+            ).execute()
+        except HttpError as e:
+            raise CommentExecutionError(
+                "respond", task.id or "", f"Failed to send reply: {e}"
+            )
+
+        task.mark_completed()
+        return f"Reply sent to {original['from']} and task marked as completed"
+
     _HANDLERS = {
         CommandType.PRIORITY: _execute_priority,
         CommandType.DUE: _execute_due,
@@ -227,6 +351,7 @@ class CommentInterpreter:
         CommandType.IGNORE: _execute_ignore,
         CommandType.DELETE: _execute_delete,
         CommandType.NOTE: _execute_note,
+        CommandType.RESPOND: _execute_respond,
     }
 
     # -------------------- Task Processing --------------------
