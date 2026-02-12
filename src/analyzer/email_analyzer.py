@@ -192,6 +192,7 @@ class EmailAnalyzer:
         """
         adapter = self._get_adapter()
         messages = self._build_messages(email)
+        logger.info("Analyzing email %s", email.id)
 
         last_error: Optional[LLMResponseError] = None
         for attempt in range(self._max_retries + 1):
@@ -201,10 +202,16 @@ class EmailAnalyzer:
                     temperature=self._temperature,
                     json_mode=True,
                 )
-                return self._parse_response(response, email)
+                result = self._parse_response(response, email)
+                logger.debug("Analysis complete for email %s: %d tasks extracted", email.id, len(result.tasks))
+                return result
             except LLMResponseError as e:
                 last_error = e
                 if attempt < self._max_retries:
+                    logger.warning(
+                        "Retrying analysis for email %s (attempt %d/%d): %s",
+                        email.id, attempt + 1, self._max_retries + 1, e,
+                    )
                     continue
                 raise
 

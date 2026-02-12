@@ -1,5 +1,6 @@
 """TaskManager for Google Tasks API integration."""
 
+import logging
 from typing import Iterator, Optional
 
 from googleapiclient.discovery import Resource
@@ -16,6 +17,7 @@ from .exceptions import (
 from .models import Task, TaskList, TaskStatus
 from .tasks_auth import TasksAuthenticator
 
+logger = logging.getLogger(__name__)
 
 # Default task list name for email-generated tasks
 DEFAULT_LIST_NAME = "Email Tasks"
@@ -66,6 +68,7 @@ class TaskManager:
         """
         status_code = error.resp.status
         reason = error.reason if hasattr(error, "reason") else str(error)
+        logger.error("Google Tasks API error (status=%d): %s", status_code, reason)
 
         if status_code == 404:
             raise TaskNotFoundError(task_id=context) from error
@@ -160,11 +163,13 @@ class TaskManager:
         for task_list in self.list_task_lists():
             if task_list.title == self._default_list_name:
                 self._default_list_id = task_list.id
+                logger.debug("Using existing task list '%s' (id=%s)", task_list.title, task_list.id)
                 return task_list
 
         # Create new list
         task_list = self.create_task_list(self._default_list_name)
         self._default_list_id = task_list.id
+        logger.info("Created task list '%s' (id=%s)", task_list.title, task_list.id)
         return task_list
 
     # -------------------- Task CRUD Operations --------------------
@@ -191,7 +196,9 @@ class TaskManager:
             service = self._get_service()
             body = task.to_api_body()
             result = service.tasks().insert(tasklist=list_id, body=body).execute()
-            return Task.from_api_response(result, task_list_id=list_id)
+            created = Task.from_api_response(result, task_list_id=list_id)
+            logger.info("Created task '%s' (id=%s)", created.title, created.id)
+            return created
         except HttpError as e:
             if e.resp.status == 404:
                 raise TaskListNotFoundError(list_id) from e
@@ -363,7 +370,9 @@ class TaskManager:
         """
         task = self.get_task(task_id, list_id)
         task.mark_completed()
-        return self.update_task(task, list_id)
+        updated = self.update_task(task, list_id)
+        logger.info("Marked task %s as completed", task_id)
+        return updated
 
     def uncomplete_task(self, task_id: str, list_id: Optional[str] = None) -> Task:
         """Mark a task as needing action.
@@ -442,6 +451,7 @@ class TaskManager:
         for task in self.list_tasks(list_id, show_completed=include_completed):
             if task.source_thread_id == thread_id:
                 matching_tasks.append(task)
+        logger.debug("Thread %s: found %d matching tasks", thread_id, len(matching_tasks))
         return matching_tasks
 
     def find_tasks_by_email_id(
@@ -488,4 +498,5 @@ class TaskManager:
         ):
             completed_task = self.complete_task(task.id, list_id)
             completed_tasks.append(completed_task)
+        logger.info("Completed %d tasks for thread %s", len(completed_tasks), thread_id)
         return completed_tasks

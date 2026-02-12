@@ -1,5 +1,6 @@
 """OpenAI GPT adapter implementation."""
 
+import logging
 import os
 from typing import Optional
 
@@ -19,6 +20,8 @@ from .exceptions import (
     LLMResponseError,
 )
 from .models import Message
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIAdapter(LLMAdapter):
@@ -94,6 +97,7 @@ class OpenAIAdapter(LLMAdapter):
             LLMResponseError: Invalid response from OpenAI.
         """
         client = self._get_client()
+        logger.debug("Sending request to OpenAI model=%s json_mode=%s", self._model, json_mode)
 
         try:
             response_format = {"type": "json_object"} if json_mode else {"type": "text"}
@@ -112,6 +116,12 @@ class OpenAIAdapter(LLMAdapter):
             content = response.choices[0].message.content
             if content is None:
                 raise LLMResponseError("Empty content in OpenAI response")
+
+            if response.usage:
+                logger.debug(
+                    "OpenAI response received (prompt=%d, completion=%d tokens)",
+                    response.usage.prompt_tokens, response.usage.completion_tokens,
+                )
 
             return content
 

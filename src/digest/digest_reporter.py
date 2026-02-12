@@ -1,6 +1,7 @@
 """DigestReporter for generating daily task digest reports."""
 
 import base64
+import logging
 from datetime import date, timedelta
 from email.mime.text import MIMEText
 from typing import Optional
@@ -13,6 +14,8 @@ from src.tasks.task_manager import TaskManager
 
 from .exceptions import DigestBuildError, DigestDeliveryError
 from .models import DeliveryResult, DigestReport, DigestSection
+
+logger = logging.getLogger(__name__)
 
 
 class DigestReporter:
@@ -140,6 +143,7 @@ class DigestReporter:
 
             tasks = list(tm.list_tasks(list_id=effective_list_id, show_completed=False))
         except Exception as e:
+            logger.error("Failed to build digest report: %s", e)
             raise DigestBuildError(str(e)) from e
 
         sections = self._categorize_tasks(tasks)
@@ -150,12 +154,14 @@ class DigestReporter:
                 overdue_count = section.count
                 break
 
-        return DigestReport(
+        report = DigestReport(
             sections=sections,
             total_pending=len(tasks),
             total_overdue=overdue_count,
             task_list_name=task_list_name,
         )
+        logger.info("Built digest report: %d pending tasks (%d overdue)", len(tasks), overdue_count)
+        return report
 
     def format_plain_text(self, report: DigestReport) -> str:
         """Format a digest report as plain text.
@@ -223,6 +229,7 @@ class DigestReporter:
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
         try:
+            logger.info("Sending digest email to %s", recipient)
             service = self._get_gmail_service()
             result = (
                 service.users()
@@ -230,8 +237,10 @@ class DigestReporter:
                 .send(userId="me", body={"raw": raw})
                 .execute()
             )
+            logger.info("Digest email sent (message_id=%s)", result["id"])
             return result["id"]
         except HttpError as e:
+            logger.error("Failed to send digest email: %s", e)
             raise DigestDeliveryError(str(e)) from e
 
     def generate_and_send(
