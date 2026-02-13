@@ -108,18 +108,35 @@ class DigestReporter:
         return sections
 
     def _format_task_line(self, task) -> str:
-        """Format a single task as a plain text line.
+        """Format a single task as plain text lines with optional sub-bullets.
+
+        Includes the task title, an email link (if source thread exists),
+        and a description preview (first 100 chars of notes).
 
         Args:
             task: Task object to format.
 
         Returns:
-            Formatted string like "- [ ] Task title (due: 2026-02-15)".
+            Formatted string with main line and optional sub-bullets.
         """
-        line = f"- [ ] {task.title}"
+        lines = []
+        main_line = f"- [ ] {task.title}"
         if task.due is not None:
-            line += f" (due: {task.due.isoformat()})"
-        return line
+            main_line += f" (due: {task.due.isoformat()})"
+        lines.append(main_line)
+
+        if task.source_thread_id:
+            lines.append(
+                f"  - Email: https://mail.google.com/mail/#all/{task.source_thread_id}"
+            )
+
+        if task.notes:
+            description = task.notes
+            if len(description) > 100:
+                description = description[:100] + "..."
+            lines.append(f"  - {description}")
+
+        return "\n".join(lines)
 
     # -------------------- Public API --------------------
 
@@ -181,6 +198,7 @@ class DigestReporter:
         lines.append(f"  Generated: {report.generated_at.strftime('%Y-%m-%d %H:%M')}")
         if report.task_list_name:
             lines.append(f"  Task List: {report.task_list_name}")
+        lines.append("  View all: https://tasks.google.com/embed/list/~default")
         lines.append(separator)
         lines.append("")
 

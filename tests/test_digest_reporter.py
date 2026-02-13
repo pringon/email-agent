@@ -705,6 +705,127 @@ class TestFormatPlainText:
 
         assert "overdue" not in text.lower()
 
+    def test_format_header_includes_google_tasks_link(self, reporter):
+        """Test that header contains link to Google Tasks."""
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            task_list_name="Email Tasks",
+            total_pending=0,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert "https://tasks.google.com/embed/list/~default" in text
+
+    def test_format_task_with_email_link(self, reporter):
+        """Test that tasks with source_thread_id show email link."""
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[
+                DigestSection(
+                    heading="No Due Date",
+                    tasks=[Task(title="Reply to Alice", source_thread_id="thread_abc123")],
+                ),
+            ],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert "  - Email: https://mail.google.com/mail/#all/thread_abc123" in text
+
+    def test_format_task_without_email_link(self, reporter):
+        """Test that tasks without source_thread_id don't show email link."""
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[
+                DigestSection(
+                    heading="No Due Date",
+                    tasks=[Task(title="Manual task")],
+                ),
+            ],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert "Email:" not in text
+
+    def test_format_task_with_short_description(self, reporter):
+        """Test that tasks with short notes show full description."""
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[
+                DigestSection(
+                    heading="No Due Date",
+                    tasks=[Task(title="Review PR", notes="Check the new auth module")],
+                ),
+            ],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert "  - Check the new auth module" in text
+        assert "..." not in text.split("Check the new auth module")[0]
+
+    def test_format_task_with_long_description_truncated(self, reporter):
+        """Test that notes longer than 100 chars are truncated with ellipsis."""
+        long_notes = "A" * 150
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[
+                DigestSection(
+                    heading="No Due Date",
+                    tasks=[Task(title="Big task", notes=long_notes)],
+                ),
+            ],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert f"  - {'A' * 100}..." in text
+        assert "A" * 101 not in text
+
+    def test_format_task_without_notes_no_description(self, reporter):
+        """Test that tasks without notes don't show description sub-bullet."""
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[
+                DigestSection(
+                    heading="No Due Date",
+                    tasks=[Task(title="No notes task")],
+                ),
+            ],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+        task_lines = text.split("- [ ] No notes task")[1].split("\n")
+
+        # The line after the task should be empty (section gap) or separator, not a sub-bullet
+        assert not any(line.startswith("  - ") for line in task_lines[:2] if "Email:" not in line and "https://tasks" not in line)
+
+    def test_format_task_with_exactly_100_char_notes(self, reporter):
+        """Test that notes of exactly 100 chars are shown without ellipsis."""
+        notes_100 = "B" * 100
+        report = DigestReport(
+            generated_at=datetime(2026, 2, 10, 9, 0, 0),
+            sections=[
+                DigestSection(
+                    heading="No Due Date",
+                    tasks=[Task(title="Boundary task", notes=notes_100)],
+                ),
+            ],
+            total_pending=1,
+        )
+
+        text = reporter.format_plain_text(report)
+
+        assert f"  - {'B' * 100}" in text
+        assert "..." not in text.split("B" * 100)[1].split("\n")[0]
+
 
 # ==================== Send Email Tests ====================
 
