@@ -15,11 +15,6 @@ class EmailType(Enum):
     AUTOMATED = "automated"
     NOTIFICATION = "notification"
 
-    @property
-    def is_actionable(self) -> bool:
-        """Whether this email type should produce tasks."""
-        return self == EmailType.PERSONAL
-
 
 class Priority(Enum):
     """Task priority levels."""
@@ -122,6 +117,7 @@ class AnalysisResult:
         thread_id: Gmail thread ID.
         summary: Brief summary of the email content.
         email_type: Classification of the email (personal, newsletter, etc.).
+        is_actionable: Whether this email requires action from the recipient.
         tasks: List of extracted tasks (may be empty).
         requires_response: Whether email needs a reply.
         sender_name: Extracted sender name for context.
@@ -132,6 +128,7 @@ class AnalysisResult:
     thread_id: str
     summary: str
     email_type: EmailType = EmailType.PERSONAL
+    is_actionable: bool = True
     tasks: list[ExtractedTask] = field(default_factory=list)
     requires_response: bool = False
     sender_name: str = ""
@@ -144,6 +141,7 @@ class AnalysisResult:
             "thread_id": self.thread_id,
             "summary": self.summary,
             "email_type": self.email_type.value,
+            "is_actionable": self.is_actionable,
             "tasks": [t.to_dict() for t in self.tasks],
             "requires_response": self.requires_response,
             "sender_name": self.sender_name,
@@ -171,6 +169,7 @@ class AnalysisResult:
             thread_id=data["thread_id"],
             summary=data["summary"],
             email_type=email_type,
+            is_actionable=data.get("is_actionable", True),
             tasks=[ExtractedTask.from_dict(t) for t in data.get("tasks", [])],
             requires_response=data.get("requires_response", False),
             sender_name=data.get("sender_name", ""),

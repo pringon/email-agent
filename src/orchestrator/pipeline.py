@@ -157,9 +157,9 @@ class EmailAgentOrchestrator:
                 try:
                     analysis = analyzer.analyze(email)
                     analyses.append(analysis)
-                    if not analysis.email_type.is_actionable:
+                    if not analysis.is_actionable:
                         logger.info(
-                            "Classified as %s: '%s' from %s",
+                            "Non-actionable %s: '%s' from %s",
                             analysis.email_type.value,
                             email.subject,
                             email.sender,
@@ -174,7 +174,7 @@ class EmailAgentOrchestrator:
 
             total_tasks = sum(len(a.tasks) for a in analyses)
             non_actionable = sum(
-                1 for a in analyses if not a.email_type.is_actionable
+                1 for a in analyses if not a.is_actionable
             )
             logger.info(
                 "Analyzed %d emails, found %d tasks, %d non-actionable (%d errors)",
@@ -204,19 +204,19 @@ class EmailAgentOrchestrator:
                 return {
                     "tasks_created": 0,
                     "duplicates_skipped": 0,
-                    "newsletters_filtered": 0,
+                    "non_actionable_filtered": 0,
                 }
 
             tm = self._get_task_manager()
             created = 0
             skipped = 0
-            newsletters_filtered = 0
+            non_actionable_filtered = 0
 
             for analysis in analyses:
-                if not analysis.email_type.is_actionable:
-                    newsletters_filtered += 1
+                if not analysis.is_actionable:
+                    non_actionable_filtered += 1
                     logger.info(
-                        "Skipping %s email from %s: %s",
+                        "Skipping non-actionable %s email from %s: %s",
                         analysis.email_type.value,
                         analysis.sender_name,
                         analysis.summary[:80] if analysis.summary else "(no summary)",
@@ -237,15 +237,15 @@ class EmailAgentOrchestrator:
                     created += 1
 
             logger.info(
-                "Created %d tasks (%d duplicates skipped, %d newsletters filtered)",
+                "Created %d tasks (%d duplicates skipped, %d non-actionable filtered)",
                 created,
                 skipped,
-                newsletters_filtered,
+                non_actionable_filtered,
             )
             return {
                 "tasks_created": created,
                 "duplicates_skipped": skipped,
-                "newsletters_filtered": newsletters_filtered,
+                "non_actionable_filtered": non_actionable_filtered,
             }
 
         result.steps.append(self._run_step("create_tasks", create_tasks_step))

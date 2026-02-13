@@ -132,7 +132,7 @@ class TestEmailAgentOrchestrator:
         assert result.steps[2].name == "create_tasks"
         assert result.steps[2].details["tasks_created"] == 1
         assert result.steps[2].details["duplicates_skipped"] == 0
-        assert result.steps[2].details["newsletters_filtered"] == 0
+        assert result.steps[2].details["non_actionable_filtered"] == 0
         assert result.finished_at is not None
 
     def test_no_emails_returns_success(self):
@@ -146,7 +146,7 @@ class TestEmailAgentOrchestrator:
         assert result.steps[0].details["emails_fetched"] == 0
         assert result.steps[1].details["emails_analyzed"] == 0
         assert result.steps[2].details["tasks_created"] == 0
-        assert result.steps[2].details["newsletters_filtered"] == 0
+        assert result.steps[2].details["non_actionable_filtered"] == 0
 
     def test_fetch_failure_skips_later_steps(self):
         fetcher = MagicMock()
@@ -312,6 +312,7 @@ class TestEmailAgentOrchestrator:
             thread_id=email.thread_id,
             summary="Bloomberg daily market roundup",
             email_type=EmailType.NEWSLETTER,
+            is_actionable=False,
             tasks=[],
             sender_name="Bloomberg",
         )
@@ -328,7 +329,7 @@ class TestEmailAgentOrchestrator:
         result = orchestrator.run()
 
         assert result.success is True
-        assert result.steps[2].details["newsletters_filtered"] == 1
+        assert result.steps[2].details["non_actionable_filtered"] == 1
         assert result.steps[2].details["tasks_created"] == 0
         task_manager.create_from_extracted_task.assert_not_called()
 
@@ -357,6 +358,7 @@ class TestEmailAgentOrchestrator:
             thread_id="t2",
             summary="Weekly tech newsletter",
             email_type=EmailType.NEWSLETTER,
+            is_actionable=False,
             tasks=[],
             sender_name="TechDigest",
         )
@@ -378,7 +380,7 @@ class TestEmailAgentOrchestrator:
 
         assert result.success is True
         assert result.steps[2].details["tasks_created"] == 1
-        assert result.steps[2].details["newsletters_filtered"] == 1
+        assert result.steps[2].details["non_actionable_filtered"] == 1
         assert task_manager.create_from_extracted_task.call_count == 1
 
     def test_marketing_emails_are_filtered(self):
@@ -389,6 +391,7 @@ class TestEmailAgentOrchestrator:
             thread_id=email.thread_id,
             summary="50% off sale",
             email_type=EmailType.MARKETING,
+            is_actionable=False,
             tasks=[],
             sender_name="Store",
         )
@@ -405,7 +408,7 @@ class TestEmailAgentOrchestrator:
         result = orchestrator.run()
 
         assert result.success is True
-        assert result.steps[2].details["newsletters_filtered"] == 1
+        assert result.steps[2].details["non_actionable_filtered"] == 1
         assert result.steps[2].details["tasks_created"] == 0
 
     def test_lazy_init_creates_default_instances(self):

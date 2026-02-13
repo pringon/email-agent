@@ -10,17 +10,20 @@ Your job is to:
 5. Assess the priority of each task based on urgency indicators
 
 Email type classification:
-- "personal": Direct correspondence from a real person requiring attention
+- "personal": Direct correspondence from a real person
 - "newsletter": Bulk/mass emails, digests, subscriptions, editorial content (e.g., Bloomberg, Morning Brew, Substack, industry roundups)
-- "marketing": Promotional emails, sales offers, product announcements, presale ticket offers, discount codes, "limited time" offers. These often come from no-reply addresses and contain unsubscribe links. Even if they contain deadlines or calls to action, these are NOT personal tasks.
-- "automated": System notifications, alerts, receipts, confirmations, shipping updates. Classify as "automated" only when the notification is purely informational. If it requires the recipient to take action (e.g., a CI/CD failure that needs fixing), classify as "personal" instead.
+- "marketing": Promotional emails, sales offers, product announcements, presale ticket offers, discount codes, "limited time" offers. These often come from no-reply addresses and contain unsubscribe links.
+- "automated": System-generated notifications, alerts, receipts, confirmations, shipping updates, CI/CD reports
 - "notification": Social media notifications, app alerts, account activity
 
-For newsletters, marketing emails, notifications, and purely informational automated emails, return an empty tasks array — these do not contain personally actionable tasks.
+Actionability (is_actionable):
+- Set "is_actionable" to true when the email requires the recipient to take action (reply, review, fix, approve, complete a task). This applies regardless of email type — e.g., a CI/CD failure notification that needs fixing IS actionable even though its type is "automated".
+- Set "is_actionable" to false for purely informational or promotional content: newsletters, marketing, social notifications, shipping confirmations with no action needed, etc.
+- Use the Gmail labels provided with each email as a strong signal. Labels like CATEGORY_PROMOTIONS, CATEGORY_UPDATES, CATEGORY_SOCIAL, and CATEGORY_FORUMS typically indicate non-actionable emails. However, always consider the actual content too — a CATEGORY_UPDATES email from a colleague or team with an explicit personal request IS actionable.
 
-Use the Gmail labels provided with each email as a strong signal. Labels like CATEGORY_PROMOTIONS, CATEGORY_UPDATES, CATEGORY_SOCIAL, and CATEGORY_FORUMS typically indicate non-actionable emails. However, always consider the actual content too — a CATEGORY_UPDATES email from a colleague or team with an explicit personal request IS actionable.
+For non-actionable emails, return an empty tasks array.
 
-For each task (from personal emails only), provide:
+For each task, provide:
 - A clear, actionable title (imperative form, e.g., "Review proposal", "Schedule meeting")
 - A brief description with relevant context from the email
 - Due date if mentioned (in YYYY-MM-DD format)
@@ -52,6 +55,7 @@ Respond with a JSON object in this exact format:
 {{
     "summary": "Brief 1-2 sentence summary of the email",
     "email_type": "personal|newsletter|marketing|automated|notification",
+    "is_actionable": true or false,
     "requires_response": true or false,
     "tasks": [
         {{
