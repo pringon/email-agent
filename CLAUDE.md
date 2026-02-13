@@ -73,3 +73,7 @@ Prefer smaller, focused PRs to reduce review burden:
 - **Approach:** Break large features into logical increments (e.g., models first, then implementation, then tests)
 
 Smaller PRs are easier to review, less likely to introduce bugs, and create cleaner git history.
+
+## Classification Prompt Changes
+
+When modifying `src/analyzer/prompts.py` to improve email classification or actionability rules, add a corresponding `EmailSpecimen` entry in `tests/test_analyzer_classification.py` to validate the change against the real LLM. Set `expect_tasks=False` for non-actionable specimens and `expect_tasks=True` with `min_tasks=1` for actionable ones. Run the new specimen with `python -m pytest tests/test_analyzer_classification.py -v -s -k "<specimen_name>"`.

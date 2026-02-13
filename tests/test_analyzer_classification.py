@@ -152,6 +152,54 @@ Unsubscribe: https://linkup.com/unsubscribe""",
     ),
     # --- Automated Notifications (informational, no action required) ---
     EmailSpecimen(
+        name="icloud_billing_receipt",
+        category="automated",
+        sender="Apple",
+        sender_email="no_reply@email.apple.com",
+        subject="Your invoice from Apple.",
+        body="""\
+Invoice
+
+11 February 2026
+
+Order ID: MXKZDGKVMF
+
+Apple Account: user@gmail.com
+
+iCloud
+iCloud+ with 200 GB (Monthly)
+
+Renews 11 March 2026
+
+£2.99
+
+Inclusive of VAT at 20% £0.50
+
+Billing and Payment
+
+Subtotal £2.49
+VAT charged at 20% £0.50
+American Express •••• 1003 (Apple Pay) £2.99
+
+If you have any questions about your bill, contact support. This email \
+confirms payment for the iCloud+ plan listed above. You will be billed each \
+plan period until you cancel by downgrading to the free storage plan from \
+your iOS device, Mac or PC.
+
+You may contact Apple for a full refund within 15 days of a monthly \
+subscription upgrade or within 45 days of a yearly payment.
+
+Turn Off Renewal Receipt Emails
+Manage Subscriptions
+Purchase History
+Report a Problem
+
+TM and © 2026 Apple Distribution International Ltd.""",
+        labels=["CATEGORY_UPDATES", "UNREAD", "IMPORTANT"],
+        expect_tasks=False,
+        expected_email_type=EmailType.AUTOMATED,
+    ),
+    EmailSpecimen(
         name="shipping_notification",
         category="automated",
         sender="UPS",
