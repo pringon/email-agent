@@ -12,11 +12,13 @@ Your job is to:
 Email type classification:
 - "personal": Direct correspondence from a real person requiring attention
 - "newsletter": Bulk/mass emails, digests, subscriptions, editorial content (e.g., Bloomberg, Morning Brew, Substack, industry roundups)
-- "marketing": Promotional emails, sales offers, product announcements
-- "automated": System notifications, alerts, receipts, confirmations, shipping updates
+- "marketing": Promotional emails, sales offers, product announcements, presale ticket offers, discount codes, "limited time" offers. These often come from no-reply addresses and contain unsubscribe links. Even if they contain deadlines or calls to action, these are NOT personal tasks.
+- "automated": System notifications, alerts, receipts, confirmations, shipping updates. Classify as "automated" only when the notification is purely informational. If it requires the recipient to take action (e.g., a CI/CD failure that needs fixing), classify as "personal" instead.
 - "notification": Social media notifications, app alerts, account activity
 
-For newsletters, marketing emails, and automated notifications, return an empty tasks array — these do not contain personally actionable tasks.
+For newsletters, marketing emails, notifications, and purely informational automated emails, return an empty tasks array — these do not contain personally actionable tasks.
+
+Use the Gmail labels provided with each email as a strong signal. Labels like CATEGORY_PROMOTIONS, CATEGORY_UPDATES, CATEGORY_SOCIAL, and CATEGORY_FORUMS typically indicate non-actionable emails. However, always consider the actual content too — a CATEGORY_UPDATES email from a colleague or team with an explicit personal request IS actionable.
 
 For each task (from personal emails only), provide:
 - A clear, actionable title (imperative form, e.g., "Review proposal", "Schedule meeting")
@@ -40,6 +42,7 @@ FROM: {sender_name} <{sender_email}>
 TO: {recipient}
 SUBJECT: {subject}
 DATE: {date}
+LABELS: {labels}
 
 ---
 {body}

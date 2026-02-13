@@ -742,6 +742,52 @@ class TestEmailAnalyzer:
         assert result.email_type == EmailType.PERSONAL
         assert result.email_type.is_actionable is True
 
+    def test_labels_included_in_prompt(self, mock_adapter, valid_llm_response):
+        """Test that email labels are passed to the LLM prompt."""
+        mock_adapter.complete.return_value = valid_llm_response
+
+        email = Email(
+            id="msg123",
+            thread_id="thread456",
+            subject="Test",
+            sender="Test",
+            sender_email="test@example.com",
+            recipient="me@example.com",
+            date=datetime(2024, 1, 15),
+            body="Test body",
+            labels=["CATEGORY_PROMOTIONS", "INBOX", "UNREAD"],
+        )
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        analyzer.analyze(email)
+
+        call_args = mock_adapter.complete.call_args
+        messages = call_args[1]["messages"]
+        assert "LABELS: CATEGORY_PROMOTIONS, INBOX, UNREAD" in messages[1].content
+
+    def test_empty_labels_shows_none(self, mock_adapter, valid_llm_response):
+        """Test that emails without labels show 'none' in prompt."""
+        mock_adapter.complete.return_value = valid_llm_response
+
+        email = Email(
+            id="msg123",
+            thread_id="thread456",
+            subject="Test",
+            sender="Test",
+            sender_email="test@example.com",
+            recipient="me@example.com",
+            date=datetime(2024, 1, 15),
+            body="Test body",
+            labels=[],
+        )
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        analyzer.analyze(email)
+
+        call_args = mock_adapter.complete.call_args
+        messages = call_args[1]["messages"]
+        assert "LABELS: none" in messages[1].content
+
 
 class TestResponseParsing:
     """Tests for JSON response parsing edge cases."""

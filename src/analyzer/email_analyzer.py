@@ -74,6 +74,7 @@ class EmailAnalyzer:
             List of messages for LLM.
         """
         body = email.body[: self.MAX_BODY_LENGTH]
+        labels_str = ", ".join(email.labels) if email.labels else "none"
 
         user_content = self._user_prompt_template.format(
             sender_name=email.sender,
@@ -81,6 +82,7 @@ class EmailAnalyzer:
             recipient=email.recipient,
             subject=email.subject,
             date=email.date.strftime("%Y-%m-%d %H:%M"),
+            labels=labels_str,
             body=body,
         )
 
