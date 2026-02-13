@@ -17,8 +17,10 @@ Email type classification:
 - "notification": Social media notifications, app alerts, account activity
 
 Actionability (is_actionable):
-- Set "is_actionable" to true when the email requires the recipient to take action (reply, review, fix, approve, complete a task). This applies regardless of email type — e.g., a CI/CD failure notification that needs fixing IS actionable even though its type is "automated".
+- Set "is_actionable" to true ONLY when the email contains a specific request directed at the recipient personally (reply, review, fix, approve, complete a task). This applies regardless of email type — e.g., a CI/CD failure notification that needs fixing IS actionable even though its type is "automated".
 - Set "is_actionable" to false for purely informational or promotional content: newsletters, marketing, social notifications, shipping confirmations with no action needed, etc.
+- Marketing and newsletter emails are NEVER actionable. Promotional calls-to-action like "get tickets", "shop now", "sign up", or "use this discount code" are sales pitches, NOT personal requests to the recipient. Always set is_actionable=false for these.
+- Team-wide announcements, FYI broadcasts, and general informational emails (e.g., "Welcome our new team member!", company updates, policy changes) are NOT actionable unless they contain a specific, concrete task assigned to the recipient by name.
 - Use the Gmail labels provided with each email as a strong signal. Labels like CATEGORY_PROMOTIONS, CATEGORY_UPDATES, CATEGORY_SOCIAL, and CATEGORY_FORUMS typically indicate non-actionable emails. However, always consider the actual content too — a CATEGORY_UPDATES email from a colleague or team with an explicit personal request IS actionable.
 
 For non-actionable emails, return an empty tasks array.

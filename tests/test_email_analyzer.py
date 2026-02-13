@@ -1099,3 +1099,84 @@ class TestResponseParsing:
         result = analyzer.analyze(sample_email)
 
         assert result.raw_response == raw
+
+    def test_marketing_email_forced_non_actionable(self, sample_email, mock_adapter):
+        """Test that marketing emails are forced non-actionable even if LLM says otherwise."""
+        response = json.dumps(
+            {
+                "summary": "Special presale ticket offer",
+                "email_type": "marketing",
+                "is_actionable": True,
+                "requires_response": False,
+                "tasks": [
+                    {
+                        "title": "Buy tickets",
+                        "description": "Get presale tickets",
+                        "priority": "high",
+                        "confidence": 0.9,
+                    }
+                ],
+            }
+        )
+        mock_adapter.complete.return_value = response
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.MARKETING
+        assert result.is_actionable is False
+        assert len(result.tasks) == 0
+
+    def test_newsletter_email_forced_non_actionable(self, sample_email, mock_adapter):
+        """Test that newsletter emails are forced non-actionable even if LLM says otherwise."""
+        response = json.dumps(
+            {
+                "summary": "Weekly tech digest",
+                "email_type": "newsletter",
+                "is_actionable": True,
+                "requires_response": False,
+                "tasks": [
+                    {
+                        "title": "Read article",
+                        "description": "Interesting article about AI",
+                        "priority": "low",
+                        "confidence": 0.5,
+                    }
+                ],
+            }
+        )
+        mock_adapter.complete.return_value = response
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.NEWSLETTER
+        assert result.is_actionable is False
+        assert len(result.tasks) == 0
+
+    def test_non_actionable_email_tasks_cleared(self, sample_email, mock_adapter):
+        """Test that tasks are cleared when is_actionable is false."""
+        response = json.dumps(
+            {
+                "summary": "Shipping update",
+                "email_type": "automated",
+                "is_actionable": False,
+                "requires_response": False,
+                "tasks": [
+                    {
+                        "title": "Track package",
+                        "description": "Check delivery status",
+                        "priority": "low",
+                        "confidence": 0.3,
+                    }
+                ],
+            }
+        )
+        mock_adapter.complete.return_value = response
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.AUTOMATED
+        assert result.is_actionable is False
+        assert len(result.tasks) == 0

@@ -142,12 +142,33 @@ class EmailAnalyzer:
                 logger.warning("Skipping malformed task in email %s: %s", email.id, e)
                 continue
 
+        is_actionable = data.get("is_actionable", True)
+
+        # Enforce: marketing and newsletter emails are never actionable
+        if email_type in (EmailType.MARKETING, EmailType.NEWSLETTER):
+            if is_actionable:
+                logger.debug(
+                    "Overriding is_actionable=True for %s email %s",
+                    email_type.value,
+                    email.id,
+                )
+            is_actionable = False
+
+        # Enforce: non-actionable emails produce no tasks
+        if not is_actionable and tasks:
+            logger.debug(
+                "Clearing %d tasks from non-actionable email %s",
+                len(tasks),
+                email.id,
+            )
+            tasks = []
+
         return AnalysisResult(
             email_id=email.id,
             thread_id=email.thread_id,
             summary=data.get("summary", ""),
             email_type=email_type,
-            is_actionable=data.get("is_actionable", True),
+            is_actionable=is_actionable,
             tasks=tasks,
             requires_response=data.get("requires_response", False),
             sender_name=email.sender,
