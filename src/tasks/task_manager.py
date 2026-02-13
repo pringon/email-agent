@@ -416,6 +416,10 @@ class TaskManager:
         notes_parts.append(f"Priority: {extracted.priority.value}")
         if extracted.confidence < 1.0:
             notes_parts.append(f"Confidence: {extracted.confidence:.0%}")
+        if extracted.source_thread_id:
+            notes_parts.append(
+                f"Email: https://mail.google.com/mail/#all/{extracted.source_thread_id}"
+            )
         notes_parts.append("")
         notes_parts.append(extracted.description)
 

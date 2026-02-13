@@ -264,7 +264,7 @@ class TestTaskManagerWithMock:
         mock_service.tasks().insert().execute.return_value = {
             "id": "task123",
             "title": "Reply to John",
-            "notes": f"Priority: high\n\nNeed to respond about the proposal\n\n{Task.METADATA_PREFIX}\nemail_id:email123\nthread_id:thread456",
+            "notes": f"Priority: high\nEmail: https://mail.google.com/mail/#all/thread456\n\nNeed to respond about the proposal\n\n{Task.METADATA_PREFIX}\nemail_id:email123\nthread_id:thread456",
             "status": "needsAction",
         }
 
@@ -281,6 +281,31 @@ class TestTaskManagerWithMock:
         task = task_manager.create_from_extracted_task(extracted)
         assert task.id == "task123"
         assert task.title == "Reply to John"
+
+    def test_create_from_extracted_task_includes_email_link(self, task_manager, mock_service):
+        """Test that created task notes include a Gmail link to the source email."""
+        mock_service.tasklists().list().execute.return_value = {
+            "items": [{"id": "default_list", "title": "Email Tasks"}]
+        }
+        mock_service.tasks().insert().execute.return_value = {
+            "id": "task123",
+            "title": "Reply to John",
+            "status": "needsAction",
+        }
+
+        extracted = ExtractedTask(
+            title="Reply to John",
+            description="Need to respond about the proposal",
+            priority=Priority.HIGH,
+            source_email_id="email123",
+            source_thread_id="thread456",
+        )
+
+        task_manager.create_from_extracted_task(extracted)
+
+        call_args = mock_service.tasks().insert.call_args
+        body = call_args.kwargs.get("body", {})
+        assert "https://mail.google.com/mail/#all/thread456" in body["notes"]
 
     def test_find_tasks_by_thread_id(self, task_manager, mock_service):
         """Test finding tasks by thread ID."""
