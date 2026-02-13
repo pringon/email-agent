@@ -51,14 +51,6 @@ class TestEmailType:
         assert EmailType.AUTOMATED.value == "automated"
         assert EmailType.NOTIFICATION.value == "notification"
 
-    def test_is_actionable(self):
-        """Test that only personal emails are actionable."""
-        assert EmailType.PERSONAL.is_actionable is True
-        assert EmailType.NEWSLETTER.is_actionable is False
-        assert EmailType.MARKETING.is_actionable is False
-        assert EmailType.AUTOMATED.is_actionable is False
-        assert EmailType.NOTIFICATION.is_actionable is False
-
     def test_from_string(self):
         """Test creating email type from string."""
         assert EmailType("newsletter") == EmailType.NEWSLETTER
@@ -213,6 +205,7 @@ class TestAnalysisResult:
         assert data["email_id"] == "msg123"
         assert data["summary"] == "Request to review document"
         assert data["email_type"] == "personal"
+        assert data["is_actionable"] is True
         assert data["requires_response"] is True
         assert len(data["tasks"]) == 1
         assert data["tasks"][0]["title"] == "Review doc"
@@ -229,18 +222,21 @@ class TestAnalysisResult:
         assert data["tasks"] == []
         assert data["requires_response"] is False
         assert data["email_type"] == "personal"
+        assert data["is_actionable"] is True
 
-    def test_to_dict_newsletter(self):
-        """Test serialization with newsletter type."""
+    def test_to_dict_non_actionable(self):
+        """Test serialization with non-actionable email."""
         result = AnalysisResult(
             email_id="msg123",
             thread_id="thread456",
             summary="Daily market roundup",
             email_type=EmailType.NEWSLETTER,
+            is_actionable=False,
         )
 
         data = result.to_dict()
         assert data["email_type"] == "newsletter"
+        assert data["is_actionable"] is False
 
     def test_from_dict(self):
         """Test result deserialization."""
@@ -249,6 +245,7 @@ class TestAnalysisResult:
             "thread_id": "thread456",
             "summary": "Request to review",
             "email_type": "personal",
+            "is_actionable": True,
             "tasks": [
                 {
                     "title": "Review doc",
@@ -268,25 +265,28 @@ class TestAnalysisResult:
         result = AnalysisResult.from_dict(data)
         assert result.email_id == "msg123"
         assert result.email_type == EmailType.PERSONAL
+        assert result.is_actionable is True
         assert result.requires_response is True
         assert len(result.tasks) == 1
         assert result.tasks[0].title == "Review doc"
 
-    def test_from_dict_newsletter(self):
-        """Test deserialization with newsletter type."""
+    def test_from_dict_non_actionable(self):
+        """Test deserialization with non-actionable email."""
         data = {
             "email_id": "msg123",
             "thread_id": "thread456",
             "summary": "Weekly digest",
             "email_type": "newsletter",
+            "is_actionable": False,
             "tasks": [],
         }
 
         result = AnalysisResult.from_dict(data)
         assert result.email_type == EmailType.NEWSLETTER
+        assert result.is_actionable is False
 
-    def test_from_dict_missing_email_type_defaults_to_personal(self):
-        """Test that missing email_type defaults to personal."""
+    def test_from_dict_missing_fields_default(self):
+        """Test that missing email_type and is_actionable get defaults."""
         data = {
             "email_id": "msg123",
             "thread_id": "thread456",
@@ -295,6 +295,7 @@ class TestAnalysisResult:
 
         result = AnalysisResult.from_dict(data)
         assert result.email_type == EmailType.PERSONAL
+        assert result.is_actionable is True
 
     def test_from_dict_invalid_email_type_defaults_to_personal(self):
         """Test that invalid email_type defaults to personal."""
@@ -336,17 +337,19 @@ class TestAnalysisResult:
         assert restored.requires_response == original.requires_response
         assert len(restored.tasks) == 1
 
-    def test_roundtrip_newsletter(self):
-        """Test serialization roundtrip for newsletter."""
+    def test_roundtrip_non_actionable(self):
+        """Test serialization roundtrip for non-actionable email."""
         original = AnalysisResult(
             email_id="msg123",
             thread_id="thread456",
             summary="Bloomberg Markets",
             email_type=EmailType.NEWSLETTER,
+            is_actionable=False,
         )
 
         restored = AnalysisResult.from_dict(original.to_dict())
         assert restored.email_type == EmailType.NEWSLETTER
+        assert restored.is_actionable is False
 
 
 class TestLLMExceptions:
@@ -701,6 +704,7 @@ class TestEmailAnalyzer:
             {
                 "summary": "Bloomberg daily market summary and analysis",
                 "email_type": "newsletter",
+                "is_actionable": False,
                 "requires_response": False,
                 "tasks": [],
             }
@@ -711,7 +715,7 @@ class TestEmailAnalyzer:
         result = analyzer.analyze(sample_email)
 
         assert result.email_type == EmailType.NEWSLETTER
-        assert result.email_type.is_actionable is False
+        assert result.is_actionable is False
         assert len(result.tasks) == 0
 
     def test_analyze_marketing_email(self, sample_email, mock_adapter):
@@ -720,6 +724,7 @@ class TestEmailAnalyzer:
             {
                 "summary": "50% off sale announcement",
                 "email_type": "marketing",
+                "is_actionable": False,
                 "requires_response": False,
                 "tasks": [],
             }
@@ -730,7 +735,7 @@ class TestEmailAnalyzer:
         result = analyzer.analyze(sample_email)
 
         assert result.email_type == EmailType.MARKETING
-        assert result.email_type.is_actionable is False
+        assert result.is_actionable is False
 
     def test_analyze_personal_email_type(self, sample_email, mock_adapter, valid_llm_response):
         """Test that personal emails are classified correctly."""
@@ -740,7 +745,7 @@ class TestEmailAnalyzer:
         result = analyzer.analyze(sample_email)
 
         assert result.email_type == EmailType.PERSONAL
-        assert result.email_type.is_actionable is True
+        assert result.is_actionable is True
 
     def test_labels_included_in_prompt(self, mock_adapter, valid_llm_response):
         """Test that email labels are passed to the LLM prompt."""
@@ -914,6 +919,7 @@ class TestResponseParsing:
         result = analyzer.analyze(sample_email)
 
         assert result.email_type == EmailType.PERSONAL
+        assert result.is_actionable is True
 
     def test_invalid_email_type_defaults_to_personal(self, sample_email, mock_adapter):
         """Test that unrecognized email_type defaults to personal."""
@@ -925,6 +931,29 @@ class TestResponseParsing:
         result = analyzer.analyze(sample_email)
 
         assert result.email_type == EmailType.PERSONAL
+
+    def test_missing_is_actionable_defaults_to_true(self, sample_email, mock_adapter):
+        """Test that missing is_actionable defaults to True."""
+        mock_adapter.complete.return_value = json.dumps(
+            {"summary": "Test", "email_type": "personal", "tasks": []}
+        )
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.is_actionable is True
+
+    def test_is_actionable_false_parsed(self, sample_email, mock_adapter):
+        """Test that is_actionable=false is parsed from LLM response."""
+        mock_adapter.complete.return_value = json.dumps(
+            {"summary": "Test", "email_type": "automated", "is_actionable": False, "tasks": []}
+        )
+
+        analyzer = EmailAnalyzer(adapter=mock_adapter)
+        result = analyzer.analyze(sample_email)
+
+        assert result.email_type == EmailType.AUTOMATED
+        assert result.is_actionable is False
 
     def test_newsletter_email_type_parsed(self, sample_email, mock_adapter):
         """Test that newsletter email_type is parsed correctly."""

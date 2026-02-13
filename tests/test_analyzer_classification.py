@@ -214,7 +214,6 @@ You are receiving this because you are subscribed to this thread.""",
         labels=["CATEGORY_UPDATES", "INBOX", "UNREAD"],
         expect_tasks=True,
         min_tasks=1,
-        expected_email_type=EmailType.PERSONAL,
     ),
     EmailSpecimen(
         name="meeting_request",
@@ -373,9 +372,9 @@ class TestEmailClassification:
             f"Expected >= {specimen.min_tasks} tasks for '{specimen.name}', "
             f"but got {len(result.tasks)}"
         )
-        assert result.email_type.is_actionable is True, (
-            f"Expected actionable email_type for '{specimen.name}', "
-            f"but got {result.email_type.value}"
+        assert result.is_actionable is True, (
+            f"Expected is_actionable=True for '{specimen.name}', "
+            f"but got is_actionable={result.is_actionable} (type={result.email_type.value})"
         )
         if specimen.expected_email_type is not None:
             assert result.email_type == specimen.expected_email_type, (

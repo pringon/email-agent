@@ -144,6 +144,7 @@ class EmailAnalyzer:
             thread_id=email.thread_id,
             summary=data.get("summary", ""),
             email_type=email_type,
+            is_actionable=data.get("is_actionable", True),
             tasks=tasks,
             requires_response=data.get("requires_response", False),
             sender_name=email.sender,

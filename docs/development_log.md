@@ -584,3 +584,53 @@ Rather than maintaining a list of blocked senders/domains, the LLM infers email 
 ```
 389 passed, 4 skipped in 5.27s
 ```
+
+---
+
+## Session 9: Decouple Actionability from Email Type
+
+**Date:** 2026-02-13
+**Goal:** Make `is_actionable` a separate LLM-determined field instead of deriving it from `EmailType`
+
+### Problem
+
+The `EmailType.is_actionable` property hard-coded that only `PERSONAL` emails are actionable. This forced the LLM prompt to misclassify actionable automated emails (e.g., CI/CD failures requiring a fix) as "personal" to work around the rigid filter. The classification should reflect reality — an email from a CI system is `automated`, not `personal` — and actionability should be determined independently based on content.
+
+### Changes
+
+**1. Model Layer (`src/analyzer/models.py`)**
+- Removed `is_actionable` property from `EmailType` enum
+- Added `is_actionable: bool = True` field to `AnalysisResult` dataclass
+- Updated `to_dict()` / `from_dict()` to serialize/deserialize the new field
+
+**2. LLM Prompt (`src/analyzer/prompts.py`)**
+- Added `"is_actionable": true/false` to the JSON response schema
+- Added clear guidance: actionable = requires recipient to take action (reply, review, fix, approve); non-actionable = informational, promotional, bulk content
+- Removed the workaround telling the LLM to classify actionable automated emails as "personal"
+- Removed "from personal emails only" constraint on task extraction
+
+**3. Response Parsing (`src/analyzer/email_analyzer.py`)**
+- Parse `is_actionable` from LLM JSON response (defaults to `True` if missing)
+
+**4. Pipeline (`src/orchestrator/pipeline.py`)**
+- Replaced `analysis.email_type.is_actionable` with `analysis.is_actionable`
+- Renamed `newsletters_filtered` to `non_actionable_filtered` throughout (variable, dict key, log messages) since non-actionable emails aren't limited to newsletters
+
+**5. Tests**
+- Removed `test_is_actionable` (enum property no longer exists)
+- Updated all serialization/deserialization tests for new `is_actionable` field
+- Updated LLM response fixtures to include `is_actionable` in JSON
+- Added `test_missing_is_actionable_defaults_to_true` and `test_is_actionable_false_parsed`
+- Updated orchestrator tests to use `is_actionable=False` on non-actionable analyses
+- Updated integration test assertions from `result.email_type.is_actionable` to `result.is_actionable`
+- Updated `github_ci_failure` specimen to no longer force `expected_email_type=PERSONAL`
+
+### Key Design Decision
+
+Actionability is now orthogonal to email type. Any email type can be actionable if it requires the recipient to do something. This eliminates the need for prompt workarounds and produces more accurate classifications.
+
+### Test Results
+
+```
+390 passed, 31 deselected in 0.87s
+```
