@@ -125,6 +125,31 @@ To unsubscribe, click here.""",
         expect_tasks=False,
         expected_email_type=EmailType.MARKETING,
     ),
+    EmailSpecimen(
+        name="platform_event_suggestion",
+        category="marketing",
+        sender="Linkup",
+        sender_email="no-reply@linkup.com",
+        subject="Events happening near you this week!",
+        body="""\
+Hi there,
+
+Check out Linkup events arranged by hostels and travelers to meet
+like-minded people during your stay.
+
+Upcoming events:
+- Pub crawl in Barcelona - Friday 8pm
+- Walking tour of Gothic Quarter - Saturday 10am
+- Sunset yoga on the beach - Sunday 6pm
+
+Join the community: https://linkup.com/events/barcelona
+
+You're receiving this because you have an upcoming trip.
+Unsubscribe: https://linkup.com/unsubscribe""",
+        labels=["CATEGORY_PROMOTIONS", "INBOX", "UNREAD"],
+        expect_tasks=False,
+        expected_email_type=EmailType.MARKETING,
+    ),
     # --- Automated Notifications (informational, no action required) ---
     EmailSpecimen(
         name="shipping_notification",
@@ -265,6 +290,30 @@ Dave""",
         expect_tasks=True,
         min_tasks=1,
         expected_email_type=EmailType.PERSONAL,
+    ),
+    EmailSpecimen(
+        name="incomplete_booking_reminder",
+        category="actionable",
+        sender="Booking.com",
+        sender_email="noreply@booking.com",
+        subject="Complete your reservation at Hotel Costa Brava",
+        body="""\
+Hi,
+
+You started a booking for Hotel Costa Brava in Barcelona for
+February 20-23, 2026, but didn't complete it.
+
+Your room (Deluxe Double, sea view) is still available but prices
+may change. Complete your reservation to lock in the current rate
+of EUR 145/night.
+
+Complete booking: https://booking.com/reservations/abc123
+
+If you did not start this booking, please ignore this email.""",
+        labels=["CATEGORY_UPDATES", "INBOX", "UNREAD"],
+        expect_tasks=True,
+        min_tasks=1,
+        expected_email_type=EmailType.AUTOMATED,
     ),
     EmailSpecimen(
         name="deadline_reminder_from_category_updates",
