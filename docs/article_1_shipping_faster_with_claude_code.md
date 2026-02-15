@@ -28,7 +28,7 @@ In parallel, I maintained a `development_log.md` — a running journal of each s
 - **After realizing worktrees needed credentials copied:** Added step-by-step worktree setup instructions including copying `.env` and `config/`
 - **After a prompt change broke classification:** Added a rule to always add an `EmailSpecimen` test entry when modifying classification prompts
 
-The key insight: **CLAUDE.md is a feedback loop, not a configuration file.** Each correction happens once, then persists across every future session. It's like training a new team member who actually remembers every piece of feedback you give them.
+The key insight: **CLAUDE.md is a feedback loop, not a configuration file.** Each correction happens once, then persists across every future session. It's like updating your onboarding wiki or oncall runbook with new learnings.
 
 **Important disclaimer:** As models and agents get smarter, some of these patterns may become unnecessary. Additionally, the more you add to context, the less performant agents become. Some people recommend compacting or deleting your project CLAUDE.md every few months and rebuilding it based on the current agent's capabilities.
 
