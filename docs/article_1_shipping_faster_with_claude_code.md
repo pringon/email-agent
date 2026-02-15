@@ -2,7 +2,7 @@
 
 I built a fully functional email-to-task agent in 11 days. 113 commits, 24 merged pull requests, 6 modules, ~400 tests. It comes with a full CI/CD harness. Major architectural and tech stack decisions have been made by Claude under my supervision.
 
-I didn't write most of the code by hand. Claude Code did. In this article, I want to emphasize my learnings about working effectively with an AI coding agent.
+I didn't write most of the code by hand. Claude Code did. Even this article was co-authored together with Claude and Gemini. In this article, I want to emphasize my learnings about working effectively with an AI coding agent.
 
 Here's what actually matters when you're trying to ship good quality code fast with Claude Code.
 
